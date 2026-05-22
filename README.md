@@ -86,13 +86,7 @@ Screenshot placeholder: Zoom camera picker showing OBS Virtual Camera.
 | `POST` | `/api/voice/speak` | Send text and `voice_id`, then return an audio blob. |
 | `GET` | `/api/health` | Return local API health. |
 
-## Screenshots
 
-Screenshot placeholder: Onboarding recording step.
-
-Screenshot placeholder: Call control room.
-
-Screenshot placeholder: Settings and voice profiles.
 
 ## Roadmap
 
