@@ -27,7 +27,7 @@ export function FavoriteMessages({ history, favorites, onReuse, onUnpin }) {
   return (
     <section
       aria-labelledby="fav-heading"
-      className="flex-shrink-0 border-b border-amber-100 bg-amber-50 px-4 py-2.5 dark:border-amber-900/40 dark:bg-amber-950/30"
+      className="flex-shrink-0 border-b border-amber-100 bg-amber-50 px-4 py-2.5 dark:border-amber-900/40 dark:bg-amber-950/30" style={{color:"white"}}
     >
       <div className="mb-1.5 flex items-center gap-1.5">
         <span aria-hidden="true" className="text-amber-500">⭐</span>

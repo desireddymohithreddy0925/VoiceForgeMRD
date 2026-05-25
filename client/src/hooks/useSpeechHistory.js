@@ -17,11 +17,35 @@ const MAX_HISTORY = 25;
 function readStorage(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
+
+    if (!raw) {
+      return fallback;
+    }
+
+    const parsed = JSON.parse(raw);
+
+    // Ensure correct structure
+    if (Array.isArray(fallback)) {
+      return Array.isArray(parsed) ? parsed : fallback;
+    }
+
+    return parsed ?? fallback;
   } catch {
     return fallback;
   }
 }
+/**
+ * Manages speech history and pinned favorites.
+ * Persists history and favorite IDs to localStorage.
+ *
+ * Features:
+ * - duplicate prevention
+ * - favorite persistence
+ * - capped history size
+ * - safe storage parsing
+ *
+ * @returns {Object} Speech history state and actions
+ */
 
 export function useSpeechHistory() {
   // ── State ────────────────────────────────────────────────────────────────
@@ -50,23 +74,42 @@ export function useSpeechHistory() {
   // ── Actions ──────────────────────────────────────────────────────────────
 
   /**
-   * Adds a message to history.
-   * If the exact text already exists, it is moved to the top (deduplicated).
-   * Enforces the MAX_HISTORY cap.
-   */
-  const addMessage = useCallback((text) => {
-    if (!text.trim()) return;
+ * Adds a message to speech history.
+ *
+ * Behavior:
+ * - trims whitespace
+ * - prevents empty messages
+ * - preserves existing IDs for duplicates
+ * - moves duplicate entries to top
+ * - enforces MAX_HISTORY limit
+ *
+ * @param {string} text - Message text to store
+ */
+const addMessage = useCallback((text) => {
+  const trimmed = text.trim();
 
-    setHistory((prev) => {
-      const withoutDup = prev.filter((m) => m.text !== text.trim());
-      const newEntry = {
-        id: Date.now().toString(),
-        text: text.trim(),
-        timestamp: Date.now(),
-      };
-      return [newEntry, ...withoutDup].slice(0, MAX_HISTORY);
-    });
-  }, []);
+  if (!trimmed) return;
+
+  setHistory((prev) => {
+    // Check existing message
+    const existing = prev.find((m) => m.text === trimmed);
+
+    // Preserve existing ID if duplicate found
+    const entry = existing || {
+      id: crypto.randomUUID(),
+      text: trimmed,
+      timestamp: Date.now(),
+    };
+
+    // Move duplicate to top instead of recreating
+    const updated = [
+      entry,
+      ...prev.filter((m) => m.id !== entry.id),
+    ];
+
+    return updated.slice(0, MAX_HISTORY);
+  });
+}, []);
 
   /**
    * Removes a message by id and also removes it from favorites.

@@ -1,5 +1,5 @@
 /**
- * useToast.js
+ * useToast.jsx
  * Lightweight toast notification hook — no external dependency.
  * Returns { toasts, showToast } where showToast(message, type) queues an entry.
  * Type: "success" | "error" | "info"
@@ -10,13 +10,18 @@
  *   // Render: <ToastContainer toasts={toasts} />
  */
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 let nextId = 0;
 
 export function useToast(duration = 2200) {
   const [toasts, setToasts] = useState([]);
   const timers = useRef({});
+  useEffect(() => {
+  return () => {
+    Object.values(timers.current).forEach(clearTimeout);
+  };
+}, []);
 
   const showToast = useCallback(
     (message, type = "success") => {

@@ -85,28 +85,47 @@ export default function VoiceForge() {
     showToast("Loaded into composer", "success");
   }, []);
 
-  const handleCopy = useCallback((text) => {
-    const target = text || inputText;
-    if (!target.trim()) {
-      showToast("Nothing to copy", "error");
-      return;
+  const handleCopy = useCallback(async (text) => {
+  const target = text || inputText;
+
+  if (!target.trim()) {
+    showToast("Nothing to copy", "error");
+    return;
+  }
+
+  try {
+    // Modern clipboard API
+    await navigator.clipboard.writeText(target);
+
+    showToast("Copied to clipboard ✓", "success");
+  } catch (error) {
+    try {
+      // Fallback for unsupported browsers
+      const textarea = document.createElement("textarea");
+
+      textarea.value = target;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+
+      document.body.appendChild(textarea);
+
+      textarea.focus();
+      textarea.select();
+
+      const success = document.execCommand("copy");
+
+      document.body.removeChild(textarea);
+
+      if (!success) {
+        throw new Error("Fallback copy failed");
+      }
+
+      showToast("Copied ✓", "success");
+    } catch {
+      showToast("Failed to copy message", "error");
     }
-    navigator.clipboard
-      .writeText(target)
-      .then(() => showToast("Copied to clipboard ✓", "success"))
-      .catch(() => {
-        // Fallback for environments without clipboard API
-        const ta = document.createElement("textarea");
-        ta.value = target;
-        ta.style.position = "absolute";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-        showToast("Copied ✓", "success");
-      });
-  }, [inputText]);
+  }
+}, [inputText, showToast]);
 
   const handleQuickReply = useCallback((phrase) => {
     setInputText(phrase);
