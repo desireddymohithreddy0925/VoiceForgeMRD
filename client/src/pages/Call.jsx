@@ -36,10 +36,34 @@ export default function Call() {
     const savedX = localStorage.getItem("voiceforge:calibrationXOffset");
     const savedY = localStorage.getItem("voiceforge:calibrationYOffset");
     const savedScale = localStorage.getItem("voiceforge:calibrationScale");
+
+    let x = savedX !== null ? parseInt(savedX, 10) : 0;
+    let y = savedY !== null ? parseInt(savedY, 10) : 0;
+    let scale = savedScale !== null ? parseFloat(savedScale) : 1.0;
+
+    // Sanitize and clamp values to default limits
+    if (isNaN(x)) {
+      x = 0;
+    } else {
+      x = Math.max(-400, Math.min(400, x));
+    }
+
+    if (isNaN(y)) {
+      y = 0;
+    } else {
+      y = Math.max(-250, Math.min(150, y));
+    }
+
+    if (isNaN(scale)) {
+      scale = 1.0;
+    } else {
+      scale = Math.max(0.5, Math.min(2.5, scale));
+    }
+
     return {
-      xOffset: savedX !== null ? parseInt(savedX, 10) : 0,
-      yOffset: savedY !== null ? parseInt(savedY, 10) : 0,
-      scale: savedScale !== null ? parseFloat(savedScale) : 1.0
+      xOffset: x,
+      yOffset: y,
+      scale
     };
   });
 

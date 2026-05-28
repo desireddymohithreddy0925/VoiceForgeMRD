@@ -71,11 +71,21 @@ export default React.forwardRef(function VideoPreview({
       const drawMouth = isSpeaking || isCalibratingRef.current;
       if (drawMouth) {
         const mouthOpen = isSpeaking ? 14 + Math.sin(timestamp / 80) * 8 : 14;
-        const currentCalibration = calibrationRef.current;
-        const centerX = canvas.width / 2 + currentCalibration.xOffset;
-        const centerY = canvas.height * 0.63 + currentCalibration.yOffset;
-        const radiusX = 56 * currentCalibration.scale;
-        const radiusY = mouthOpen * currentCalibration.scale;
+        const currentCalibration = calibrationRef.current || {};
+        const xOffset = typeof currentCalibration.xOffset === "number" && !isNaN(currentCalibration.xOffset)
+          ? Math.max(-400, Math.min(400, currentCalibration.xOffset))
+          : 0;
+        const yOffset = typeof currentCalibration.yOffset === "number" && !isNaN(currentCalibration.yOffset)
+          ? Math.max(-250, Math.min(150, currentCalibration.yOffset))
+          : 0;
+        const scale = typeof currentCalibration.scale === "number" && !isNaN(currentCalibration.scale)
+          ? Math.max(0.5, Math.min(2.5, currentCalibration.scale))
+          : 1.0;
+
+        const centerX = canvas.width / 2 + xOffset;
+        const centerY = canvas.height * 0.63 + yOffset;
+        const radiusX = 56 * scale;
+        const radiusY = mouthOpen * scale;
 
         context.save();
         context.fillStyle = "rgba(22, 32, 29, 0.82)";
