@@ -1,11 +1,32 @@
 // Draws the webcam and MVP lip-sync animation onto a canvas preview.
 import React from "react";
 import { Loader2 } from "lucide-react";
+import { useTheme } from "./ThemeContext";
 
-export default React.forwardRef(function VideoPreview({ webcamStream, audioUrl, isSpeaking }, ref) {
+export default React.forwardRef(function VideoPreview({
+  webcamStream,
+  audioUrl,
+  isSpeaking,
+  calibration = { xOffset: 0, yOffset: 0, scale: 1.0 },
+  isCalibrating = false
+}, ref) {
   const videoRef = React.useRef(null);
   const animationRef = React.useRef(null);
-  const [modelStatus, setModelStatus] = React.useState("Fallback animation ready");
+  const [modelStatus, setModelStatus] = React.useState(
+    "Fallback animation ready",
+  );
+  const { theme } = useTheme();
+
+  const calibrationRef = React.useRef(calibration);
+  const isCalibratingRef = React.useRef(isCalibrating);
+
+  React.useEffect(() => {
+    calibrationRef.current = calibration;
+  }, [calibration]);
+
+  React.useEffect(() => {
+    isCalibratingRef.current = isCalibrating;
+  }, [isCalibrating]);
 
   React.useEffect(() => {
     async function loadModel() {
@@ -37,26 +58,53 @@ export default React.forwardRef(function VideoPreview({ webcamStream, audioUrl, 
     const context = canvas?.getContext("2d");
     if (!canvas || !context) return undefined;
 
+    // Derive canvas colors from the active theme
+    const isDark = theme === "dark";
+    const bgColor   = isDark ? "#0f172a" : "#dfe8df";
+    const textColor = isDark ? "#e2e8f0" : "#16201d";
+    const mouthColor = isDark ? "rgba(226, 232, 240, 0.82)" : "rgba(22, 32, 29, 0.82)";
+
     function draw(timestamp) {
-      context.fillStyle = "#dfe8df";
+      context.fillStyle = bgColor;
       context.fillRect(0, 0, canvas.width, canvas.height);
 
       const video = videoRef.current;
       if (video?.readyState >= 2) {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
       } else {
-        context.fillStyle = "#16201d";
+        context.fillStyle = textColor;
         context.font = "600 24px Inter, sans-serif";
         context.textAlign = "center";
-        context.fillText("Waiting for webcam", canvas.width / 2, canvas.height / 2);
+        context.fillText(
+          "Waiting for webcam",
+          canvas.width / 2,
+          canvas.height / 2,
+        );
       }
 
-      if (isSpeaking) {
-        const mouthOpen = 14 + Math.sin(timestamp / 80) * 8;
+      const drawMouth = isSpeaking || isCalibratingRef.current;
+      if (drawMouth) {
+        const mouthOpen = isSpeaking ? 14 + Math.sin(timestamp / 80) * 8 : 14;
+        const currentCalibration = calibrationRef.current || {};
+        const xOffset = typeof currentCalibration.xOffset === "number" && !isNaN(currentCalibration.xOffset)
+          ? Math.max(-400, Math.min(400, currentCalibration.xOffset))
+          : 0;
+        const yOffset = typeof currentCalibration.yOffset === "number" && !isNaN(currentCalibration.yOffset)
+          ? Math.max(-250, Math.min(150, currentCalibration.yOffset))
+          : 0;
+        const scale = typeof currentCalibration.scale === "number" && !isNaN(currentCalibration.scale)
+          ? Math.max(0.5, Math.min(2.5, currentCalibration.scale))
+          : 1.0;
+
+        const centerX = canvas.width / 2 + xOffset;
+        const centerY = canvas.height * 0.63 + yOffset;
+        const radiusX = 56 * scale;
+        const radiusY = mouthOpen * scale;
+
         context.save();
-        context.fillStyle = "rgba(22, 32, 29, 0.82)";
+        context.fillStyle = mouthColor;
         context.beginPath();
-        context.ellipse(canvas.width / 2, canvas.height * 0.63, 56, mouthOpen, 0, 0, Math.PI * 2);
+        context.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2);
         context.fill();
         context.restore();
       }
@@ -66,19 +114,32 @@ export default React.forwardRef(function VideoPreview({ webcamStream, audioUrl, 
 
     animationRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(animationRef.current);
-  }, [ref, isSpeaking]);
+  }, [ref, isSpeaking, theme]);
 
   return (
-    <section className="rounded-lg border border-ink/10 bg-white p-5 shadow-soft">
+    <section className="rounded-lg border border-ink/10 bg-white p-5 shadow-soft dark:border-border dark:bg-surface dark:text-neutral-100 dark:shadow-soft-dk">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold">Lip-synced output</h2>
-          <p className="mt-1 text-sm text-ink/65">{modelStatus}</p>
+          <p className="mt-1 text-sm text-ink/65 dark:text-muted">
+            {modelStatus}
+          </p>
         </div>
-        {isSpeaking && <Loader2 className="animate-spin text-coral" size={20} aria-hidden="true" />}
+        {isSpeaking && (
+          <Loader2
+            className="animate-spin text-coral"
+            size={20}
+            aria-hidden="true"
+          />
+        )}
       </div>
       <video ref={videoRef} autoPlay muted playsInline className="hidden" />
-      <canvas ref={ref} width="960" height="540" className="aspect-video w-full rounded-md bg-ink object-cover" />
+      <canvas
+        ref={ref}
+        width="960"
+        height="540"
+        className="aspect-video w-full rounded-md bg-black object-cover"
+      />
       {audioUrl && (
         <audio className="mt-4 w-full" controls src={audioUrl} autoPlay>
           <track kind="captions" />

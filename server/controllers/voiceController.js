@@ -11,6 +11,7 @@ function requireApiKey(request) {
     const error = new Error("Missing ElevenLabs API key. Add it to .env or Settings.");
     error.status = 400;
     throw error;
+    // console.log(process.env.ELEVENLABS_API_KEY);
   }
   return apiKey;
 }

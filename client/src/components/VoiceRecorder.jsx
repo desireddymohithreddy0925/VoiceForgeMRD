@@ -33,7 +33,10 @@ export default function VoiceRecorder({ onRecordingReady, disabled = false }) {
     };
 
     setDuration(0);
-    timerRef.current = window.setInterval(() => setDuration((value) => value + 1), 1000);
+    timerRef.current = window.setInterval(
+      () => setDuration((value) => value + 1),
+      1000,
+    );
     recorder.start();
     setIsRecording(true);
   }
@@ -53,15 +56,18 @@ export default function VoiceRecorder({ onRecordingReady, disabled = false }) {
   }, [audioUrl]);
 
   return (
-    <section className="rounded-lg border border-ink/10 bg-white p-5 shadow-soft">
+    <section className="rounded-lg border border-ink/10 bg-white p-5 shadow-soft dark:border-border dark:bg-surface dark:text-neutral-100 dark:shadow-soft-dk">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-xl font-bold">Record a 10-second reference</h2>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-ink/70">
-            Use your own voice or a trusted reference speaker with consent. Keep background noise low.
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-ink/70 dark:text-muted">
+            Use your own voice or a trusted reference speaker with consent. Keep
+            background noise low.
           </p>
         </div>
-        <span className="rounded-md bg-mint px-3 py-1 text-sm font-semibold text-ink">{duration}s</span>
+        <span className="rounded-md bg-mint px-3 py-1 text-sm font-semibold text-ink dark:bg-glow/15 dark:text-glow">
+          {duration}s
+        </span>
       </div>
 
       <div className="mt-6 flex flex-col gap-4 lg:flex-row lg:items-center">
@@ -70,18 +76,27 @@ export default function VoiceRecorder({ onRecordingReady, disabled = false }) {
           onClick={isRecording ? stopRecording : startRecording}
           disabled={disabled}
           className={`inline-flex items-center justify-center gap-2 rounded-md px-5 py-3 font-bold text-white transition ${
-            isRecording ? "bg-coral hover:bg-coral/90" : "bg-moss hover:bg-moss/90"
+            isRecording
+              ? "bg-coral hover:bg-coral/90"
+              : "bg-moss hover:bg-moss/90"
           } disabled:cursor-not-allowed disabled:opacity-50`}
         >
-          {isRecording ? <Square size={18} aria-hidden="true" /> : <Mic size={18} aria-hidden="true" />}
+          {isRecording ? (
+            <Square size={18} aria-hidden="true" />
+          ) : (
+            <Mic size={18} aria-hidden="true" />
+          )}
           {isRecording ? "Stop recording" : "Start recording"}
         </button>
 
-        <div className="recording-wave flex h-12 flex-1 items-center gap-1 rounded-md border border-ink/10 bg-cloud px-4" aria-hidden="true">
+        <div
+          className="recording-wave flex h-12 flex-1 items-center gap-1 rounded-md border border-ink/10 bg-cloud px-4 dark:border-border dark:bg-black"
+          aria-hidden="true"
+        >
           {[18, 30, 42, 30, 18].map((height, index) => (
             <span
               key={height + index}
-              className={`block w-2 rounded-full ${isRecording ? "bg-coral" : "bg-ink/20"}`}
+              className={`block w-2 rounded-full ${isRecording ? "bg-coral" : "bg-black/20 dark:bg-neutral-700"}`}
               style={{ height }}
             />
           ))}
@@ -94,7 +109,7 @@ export default function VoiceRecorder({ onRecordingReady, disabled = false }) {
         )}
       </div>
 
-      <div className="mt-4 flex items-center gap-2 text-sm text-ink/60">
+      <div className="mt-4 flex items-center gap-2 text-sm text-ink/60 dark:text-muted">
         <Upload size={16} aria-hidden="true" />
         Upload starts after you press “Clone voice”.
       </div>

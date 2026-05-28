@@ -1,43 +1,48 @@
 // Provides a small client-side API for uploading a recording and saving cloned voice profiles.
 import React from "react";
-const PROFILE_KEY = "voiceforge:profiles";
+import { getAllProfiles, saveProfile, deleteProfile } from "../utils/db.js";
+
 const ACTIVE_KEY = "voiceforge:activeVoiceId";
 
-export function getSavedProfiles() {
+export async function getSavedProfiles() {
   try {
-    return JSON.parse(localStorage.getItem(PROFILE_KEY) || "[]");
+    return await getAllProfiles();
   } catch {
     return [];
   }
 }
 
-export function saveVoiceProfile(profile) {
-  const profiles = getSavedProfiles();
+export async function saveVoiceProfile(profile, audioBlob = null) {
+  const profiles = await getSavedProfiles();
   const nextProfile = {
     id: profile.voice_id,
     voice_id: profile.voice_id,
     name: profile.name || `Voice ${profiles.length + 1}`,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    audioBlob // Store the binary reference audio Blob
   };
-  const nextProfiles = [nextProfile, ...profiles.filter((item) => item.voice_id !== nextProfile.voice_id)];
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(nextProfiles));
+  await saveProfile(nextProfile);
   localStorage.setItem(ACTIVE_KEY, nextProfile.voice_id);
   return nextProfile;
 }
 
-export function deleteVoiceProfile(voiceId) {
-  const nextProfiles = getSavedProfiles().filter((profile) => profile.voice_id !== voiceId);
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(nextProfiles));
+export async function deleteVoiceProfile(voiceId) {
+  await deleteProfile(voiceId);
+  const nextProfiles = await getSavedProfiles();
   if (localStorage.getItem(ACTIVE_KEY) === voiceId) {
     localStorage.setItem(ACTIVE_KEY, nextProfiles[0]?.voice_id || "");
   }
   return nextProfiles;
 }
 
-export function getActiveVoiceProfile() {
-  const profiles = getSavedProfiles();
-  const activeVoiceId = localStorage.getItem(ACTIVE_KEY);
-  return profiles.find((profile) => profile.voice_id === activeVoiceId) || profiles[0] || null;
+export async function getActiveVoiceProfile() {
+  try {
+    const profiles = await getSavedProfiles();
+    const activeVoiceId = localStorage.getItem(ACTIVE_KEY);
+    return profiles.find((profile) => profile.voice_id === activeVoiceId) || profiles[0] || null;
+  } catch {
+    return null;
+  }
 }
 
 export default function useVoiceClone() {
@@ -66,14 +71,15 @@ export default function useVoiceClone() {
         throw new Error(payload.error || "Voice cloning failed.");
       }
 
-      const profile = saveVoiceProfile({
+      const profile = await saveVoiceProfile({
         voice_id: payload.voice_id,
         name: payload.name || name
-      });
+      }, audioBlob);
+
       setStatus("success");
       return profile;
     } catch (cloneError) {
-      setError(cloneError.message);
+      setError(cloneError?.message || String(cloneError));
       setStatus("error");
       throw cloneError;
     }
@@ -81,3 +87,4 @@ export default function useVoiceClone() {
 
   return { cloneVoice, status, error };
 }
+
