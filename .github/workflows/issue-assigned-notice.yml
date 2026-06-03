@@ -29,6 +29,7 @@ jobs:
             const issue_number = issue.number;
 
             if (!assignee || assignee.type === 'Bot') return;
+            if ((issue.labels || []).some(label => label.name.toLowerCase() === 'go ahead')) return;
 
             const marker = `<!-- voiceforge-issue-assigned-${assignee.login} -->`;
             const comments = await github.paginate(github.rest.issues.listComments, {

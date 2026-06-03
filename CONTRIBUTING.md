@@ -52,6 +52,8 @@ Pull requests are validated only when the PR author matches the assignee on the 
 
 After a pull request is merged, automation marks the PR with `merged`, `pr-merged`, and `completed`. Linked closing issues receive `completed`, `issue-completed`, and `closed-by-pr`.
 
+Maintainers use decision labels after reviewing issues. `go ahead` means the issue is valid for assigned work. `duplicate`, `not needed`, and `out of scope` close the issue automatically with a maintainer decision comment.
+
 To request assignment on an open issue, comment with one of these commands:
 
 ```text

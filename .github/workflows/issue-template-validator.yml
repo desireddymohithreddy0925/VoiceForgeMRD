@@ -36,6 +36,10 @@ jobs:
               ELUSOC: 'FBCA04',
               bug: 'D73A4A',
               enhancement: 'A2EEEF',
+              duplicate: 'CFD3D7',
+              'not needed': 'D93F0B',
+              'out of scope': 'D93F0B',
+              'go ahead': '0E8A16',
               'needs-template': 'B60205',
               'needs-quality': 'D4C5F9'
             };
@@ -70,6 +74,10 @@ jobs:
               } catch (error) {
                 if (error.status !== 404) throw error;
               }
+            }
+
+            for (const label of ['duplicate', 'not needed', 'out of scope', 'go ahead']) {
+              await ensureLabel(label);
             }
 
             const programs = [

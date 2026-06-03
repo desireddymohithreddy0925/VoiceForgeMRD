@@ -1,0 +1,213 @@
+name: Issue Maintainer Decision
+
+on:
+  issues:
+    types: [labeled, assigned]
+
+permissions:
+  issues: write
+
+concurrency:
+  group: issue-maintainer-decision-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    if: github.event.issue.pull_request == null && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Apply maintainer decision
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issue = context.payload.issue;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = issue.number;
+
+            const labelDefinitions = {
+              duplicate: 'CFD3D7',
+              'not needed': 'D93F0B',
+              'out of scope': 'D93F0B',
+              'go ahead': '0E8A16',
+              closed: '6A737D',
+              completed: '0E8A16'
+            };
+
+            const labels = (issue.labels || []).map(label => label.name);
+            const normalizedLabels = labels.map(label => label.toLowerCase());
+            const closeReasons = {
+              duplicate: {
+                title: 'Duplicate Issue Closed',
+                summary: 'This issue appears to already be tracked elsewhere.',
+                nextStep: 'Please continue the discussion on the existing issue so context stays in one place.'
+              },
+              'not needed': {
+                title: 'Issue Closed As Not Needed',
+                summary: 'The maintainer team reviewed this and decided it is not needed for VoiceForge right now.',
+                nextStep: 'You are welcome to explore another open issue that better matches the current roadmap.'
+              },
+              'out of scope': {
+                title: 'Issue Closed As Out Of Scope',
+                summary: 'The maintainer team reviewed this and found it outside the current VoiceForge scope.',
+                nextStep: 'Please look for issues that match the project direction and contribution guidelines.'
+              }
+            };
+
+            async function ensureLabel(name) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name });
+              } catch (error) {
+                if (error.status === 404) {
+                  try {
+                    await github.rest.issues.createLabel({
+                      owner,
+                      repo,
+                      name,
+                      color: labelDefinitions[name] || 'EDEDED'
+                    });
+                  } catch (createError) {
+                    if (createError.status === 403) {
+                      core.warning(`Could not create label "${name}": ${createError.message}`);
+                      return;
+                    }
+                    throw createError;
+                  }
+                } else {
+                  throw error;
+                }
+              }
+            }
+
+            async function addLabels(issueNumber, names) {
+              for (const name of names) await ensureLabel(name);
+              try {
+                await github.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: names });
+              } catch (error) {
+                if (error.status === 403) {
+                  core.warning(`Could not add labels "${names.join(', ')}" to #${issueNumber}: ${error.message}`);
+                  return;
+                }
+                throw error;
+              }
+            }
+
+            async function createOrUpdateComment(marker, body) {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number,
+                per_page: 100
+              });
+              const existing = comments.find(comment =>
+                comment.user.type === 'Bot' &&
+                comment.body &&
+                comment.body.includes(marker)
+              );
+
+              try {
+                if (existing) {
+                  if (existing.body.trim() === body.trim()) return;
+                  await github.rest.issues.updateComment({
+                    owner,
+                    repo,
+                    comment_id: existing.id,
+                    body
+                  });
+                } else {
+                  await github.rest.issues.createComment({
+                    owner,
+                    repo,
+                    issue_number,
+                    body
+                  });
+                }
+              } catch (error) {
+                if (error.status === 403) {
+                  core.warning(`Could not write maintainer decision comment: ${error.message}`);
+                  return;
+                }
+                throw error;
+              }
+            }
+
+            const closeLabel = Object.keys(closeReasons).find(label => normalizedLabels.includes(label));
+            if (closeLabel) {
+              const decision = closeReasons[closeLabel];
+              const marker = '<!-- voiceforge-issue-maintainer-close -->';
+              const body =
+                `${marker}\n` +
+                `## ${decision.title}\n\n` +
+                `Hi @${issue.user.login}, thank you for taking the time to open this issue.\n\n` +
+                `${decision.summary}\n\n` +
+                `| Review Item | Decision |\n` +
+                `| --- | --- |\n` +
+                `| Maintainer label | \`${closeLabel}\` |\n` +
+                `| Issue status | Closing after maintainer review |\n` +
+                `| Next step | ${decision.nextStep} |\n\n` +
+                `If you believe important context was missed, please ask a maintainer before reopening or creating a new issue.\n\n` +
+                `VoiceForge automation`;
+
+              await createOrUpdateComment(marker, body);
+              await addLabels(issue_number, ['closed']);
+
+              if (issue.state !== 'closed') {
+                try {
+                  await github.rest.issues.update({
+                    owner,
+                    repo,
+                    issue_number,
+                    state: 'closed',
+                    state_reason: 'not_planned'
+                  });
+                } catch (error) {
+                  if (error.status === 403) {
+                    core.warning(`Could not close issue #${issue_number}: ${error.message}`);
+                    return;
+                  }
+                  throw error;
+                }
+              }
+              return;
+            }
+
+            if (!normalizedLabels.includes('go ahead')) return;
+
+            const assignees = issue.assignees || [];
+            if (assignees.length === 0) {
+              const marker = '<!-- voiceforge-issue-go-ahead-waiting -->';
+              const body =
+                `${marker}\n` +
+                `## Go Ahead Label Added\n\n` +
+                `This issue has been marked \`go ahead\`, but no contributor is assigned yet.\n\n` +
+                `| Status | Details |\n` +
+                `| --- | --- |\n` +
+                `| Maintainer decision | Valid for contribution |\n` +
+                `| Assignment | Waiting for maintainer assignment |\n` +
+                `| Contributor action | Please wait until an assignee is selected |\n\n` +
+                `Once a maintainer assigns a contributor, VoiceForge automation will post the full start-work guidance.\n\n` +
+                `VoiceForge automation`;
+              await createOrUpdateComment(marker, body);
+              return;
+            }
+
+            const assigneeMentions = assignees.map(assignee => `@${assignee.login}`).join(', ');
+            const marker = '<!-- voiceforge-issue-go-ahead -->';
+            const body =
+              `${marker}\n` +
+              `## Go Ahead Confirmed\n\n` +
+              `Hi ${assigneeMentions}, this issue has been reviewed and approved for work by the maintainer team.\n\n` +
+              `You may start working on this issue now. Please keep the implementation focused and open a pull request when your solution is ready.\n\n` +
+              `| Step | Guidance |\n` +
+              `| --- | --- |\n` +
+              `| Scope | Stay aligned with this issue and maintainer comments. |\n` +
+              `| PR template | Use the matching program PR template. |\n` +
+              `| Closing reference | Add \`Closes #${issue_number}\` in the PR body. |\n` +
+              `| Author check | Open the PR from the same account assigned on this issue. |\n` +
+              `| Review path | Automation will validate template, issue link, assignee match, and PR quality. |\n\n` +
+              `If you cannot continue, please comment here so maintainers can reopen the assignment for another contributor.\n\n` +
+              `VoiceForge automation`;
+
+            await createOrUpdateComment(marker, body);
