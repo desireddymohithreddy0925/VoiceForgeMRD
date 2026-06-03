@@ -134,6 +134,84 @@ jobs:
               }
             }
 
+            function getProgramReviewerMentions(programLabel) {
+              const reviewersByProgram = {
+                gssoc26: ['@sabeenaviklar'],
+                nsoc26: [],
+                SSoC26: ['@joyprakashk', '@rushi-k12'],
+                ELUSOC: []
+              };
+              return [...new Set(reviewersByProgram[programLabel] || [])];
+            }
+
+            function getReviewRequestTargets(programLabel) {
+              const mentions = getProgramReviewerMentions(programLabel);
+              const reviewers = [];
+              const teamReviewers = [];
+
+              for (const mention of mentions) {
+                const target = mention.slice(1);
+                if (target.includes('/')) {
+                  const [, teamSlug] = target.split('/');
+                  if (teamSlug) teamReviewers.push(teamSlug);
+                } else {
+                  reviewers.push(target);
+                }
+              }
+
+              return {
+                mentions,
+                reviewers: [...new Set(reviewers)],
+                teamReviewers: [...new Set(teamReviewers)]
+              };
+            }
+
+            async function requestPullRequestReview(program) {
+              const targets = getReviewRequestTargets(program.label);
+              if (targets.mentions.length === 0) {
+                return {
+                  mentions: `No mentor configured for ${program.name} yet`,
+                  status: 'No review request sent'
+                };
+              }
+
+              const existingReviewers = new Set((pr.requested_reviewers || []).map(reviewer => reviewer.login.toLowerCase()));
+              const existingTeams = new Set((pr.requested_teams || []).map(team => team.slug.toLowerCase()));
+              const reviewers = targets.reviewers
+                .filter(reviewer => reviewer.toLowerCase() !== username.toLowerCase())
+                .filter(reviewer => !existingReviewers.has(reviewer.toLowerCase()));
+              const team_reviewers = targets.teamReviewers
+                .filter(team => !existingTeams.has(team.toLowerCase()));
+
+              if (reviewers.length === 0 && team_reviewers.length === 0) {
+                return {
+                  mentions: targets.mentions.join(' '),
+                  status: 'Already requested or no eligible reviewer found'
+                };
+              }
+
+              try {
+                const reviewRequestPayload = {
+                  owner,
+                  repo,
+                  pull_number: issue_number
+                };
+                if (reviewers.length > 0) reviewRequestPayload.reviewers = reviewers;
+                if (team_reviewers.length > 0) reviewRequestPayload.team_reviewers = team_reviewers;
+                await github.rest.pulls.requestReviewers(reviewRequestPayload);
+                return {
+                  mentions: targets.mentions.join(' '),
+                  status: 'Review requested'
+                };
+              } catch (error) {
+                core.warning(`Could not request PR review from ${targets.mentions.join(' ')}: ${error.message}`);
+                return {
+                  mentions: targets.mentions.join(' '),
+                  status: 'Mentioned in review queue comment'
+                };
+              }
+            }
+
             for (const label of ['ready for review', 'invalid-pr', 'needs revision']) {
               await ensureLabel(label);
             }
@@ -313,11 +391,15 @@ jobs:
 
             if (problems.length === 0) {
               await assignAuthor();
+              const reviewRequest = await requestPullRequestReview(matchedProgram);
+              const reviewRequestText = reviewRequest.status === 'No review request sent'
+                ? `No mentor is configured for ${matchedProgram.name} yet, so automation did not send a mentor ping. Please add this program's mentor mapping before relying on automatic review routing.\n\n`
+                : `${reviewRequest.mentions}, review is requested for this ${matchedProgram.name} PR. Please check scope, code quality, tests, and merge readiness.\n\n`;
               const successCommentBody =
                 `${marker}\n` +
                 `## PR Format Check Passed\n\n` +
                 `Hi @${username}, thank you for opening this PR.\n\n` +
-                `Your PR has passed the automated structure checks and entered the maintainer review queue.\n\n` +
+                `Your PR has passed the automated structure checks, entered the maintainer review queue, and requested review from the configured ${matchedProgram.name} mentor(s).\n\n` +
                 `| Check | Status |\n` +
                 `| --- | --- |\n` +
                 `| Program template | Passed |\n` +
@@ -325,7 +407,9 @@ jobs:
                 `| Issue assignment | PR author matches linked issue assignee |\n` +
                 `| Title format | Conventional Commits title detected |\n` +
                 `| PR details | Description has enough review context |\n` +
-                `| Change size | ${totalChanges} lines changed across ${files.length} file(s) |\n\n` +
+                `| Change size | ${totalChanges} lines changed across ${files.length} file(s) |\n` +
+                `| Program mentor review | ${reviewRequest.status}: ${reviewRequest.mentions} |\n\n` +
+                reviewRequestText +
                 `This does not mean the PR is approved yet. A maintainer will still review scope, code quality, tests, and merge readiness.\n\n` +
                 `VoiceForge automation`;
 

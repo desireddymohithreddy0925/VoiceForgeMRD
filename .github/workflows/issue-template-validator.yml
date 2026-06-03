@@ -86,20 +86,14 @@ jobs:
               }
             }
 
-            async function getReviewerMentions() {
-              try {
-                const { data } = await github.rest.repos.getContent({
-                  owner,
-                  repo,
-                  path: '.github/CODEOWNERS'
-                });
-                const decoded = Buffer.from(data.content || '', data.encoding || 'base64').toString('utf8');
-                const mentions = [...new Set(decoded.match(/@[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)?/g) || [])];
-                if (mentions.length > 0) return mentions.join(' ');
-              } catch (error) {
-                core.warning(`Could not read CODEOWNERS for maintainer notifications: ${error.message}`);
-              }
-              return `@${owner}`;
+            function getProgramReviewerMentions(programLabel) {
+              const reviewersByProgram = {
+                gssoc26: ['@sabeenaviklar'],
+                nsoc26: [],
+                SSoC26: ['@joyprakashk', '@rushi-k12'],
+                ELUSOC: []
+              };
+              return [...new Set(reviewersByProgram[programLabel] || [])];
             }
 
             for (const label of ['duplicate', 'not needed', 'out of scope', 'go ahead', 'needs maintainer review', 'ready to work', 'stale-assignment', 'priority: low', 'priority: medium', 'priority: high', 'level: easy', 'level: medium', 'level: hard']) {
@@ -184,20 +178,24 @@ jobs:
             );
 
             if (problems.length === 0) {
-              const reviewerMentions = await getReviewerMentions();
+              const reviewerMentions = getProgramReviewerMentions(matchedProgram.label);
+              const reviewerMentionText = reviewerMentions.length > 0 ? reviewerMentions.join(' ') : 'No mentor configured for this program yet';
+              const reviewerRequestText = reviewerMentions.length > 0
+                ? `${reviewerMentionText}, review is requested for this ${matchedProgram.name} issue. Please check whether it should be marked \`go ahead\`, \`duplicate\`, \`not needed\`, \`out of scope\`, or assigned with priority/difficulty labels.\n\n`
+                : `No mentor is configured for ${matchedProgram.name} yet, so automation did not send a mentor ping. Please add this program's mentor mapping before relying on automatic review routing.\n\n`;
               const successBody =
                 `${marker}\n` +
                 `## Issue Intake Passed\n\n` +
                 `Hi @${username}, thank you for opening this issue with the correct template.\n\n` +
-                `Your issue has entered the maintainer review queue. The team will check scope, priority, labels, and readiness before assigning it to a contributor.\n\n` +
+                `Your issue has entered the maintainer review queue, and review has been requested from the configured ${matchedProgram.name} mentor(s). The team will check scope, priority, labels, and readiness before assigning it to a contributor.\n\n` +
                 `| Check | Status |\n` +
                 `| --- | --- |\n` +
                 `| Program template | ${matchedProgram.name} detected |\n` +
                 `| Issue type | ${isBugTemplate ? 'Bug report' : 'Feature request'} |\n` +
                 `| Detail level | Ready for maintainer review |\n` +
-                `| Maintainer ping | ${reviewerMentions} |\n` +
+                `| Program mentor review | ${reviewerMentionText} |\n` +
                 `| Next step | Maintainer assignment |\n\n` +
-                `${reviewerMentions}, this issue is ready for maintainer review. Please check whether it should be marked \`go ahead\`, \`duplicate\`, \`not needed\`, \`out of scope\`, or assigned with priority/difficulty labels.\n\n` +
+                reviewerRequestText +
                 `Please wait for maintainer confirmation before starting work. Assignment requests are welcome, but work should begin only after assignment.\n\n` +
                 `VoiceForge automation`;
 
