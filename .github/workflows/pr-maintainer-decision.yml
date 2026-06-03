@@ -156,6 +156,7 @@ jobs:
                 comment.body &&
                 (
                   (comment.body.includes('<!-- voiceforge-pr-template-validator -->') && comment.body.includes('## PR Update Needed')) ||
+                  (comment.body.includes('<!-- voiceforge-pr-template-validator -->') && comment.body.includes('## PR Needs A Quick Update')) ||
                   comment.body.includes('<!-- voiceforge-pr-invalid-warning -->')
                 )
               );
@@ -173,14 +174,16 @@ jobs:
               const marker = '<!-- voiceforge-pr-needs-revision -->';
               const body =
                 `${marker}\n` +
-                `## Changes Requested\n\n` +
+                `## Changes Requested By Mentor\n\n` +
                 `Hi @${username}, a maintainer requested changes on this PR.\n\n` +
                 `Please review the feedback, update the branch, and keep the PR focused on the linked issue scope.\n\n` +
-                `| Status | Details |\n` +
+                `### Revision Summary\n\n` +
+                `| Item | Details |\n` +
                 `| --- | --- |\n` +
                 `| Review state | Changes requested |\n` +
                 `| Label applied | \`needs revision\` |\n` +
                 `| Next step | Push updates addressing maintainer feedback |\n\n` +
+                `After you push updates, the PR validation and review flow will continue on this same PR.\n\n` +
                 `VoiceForge automation`;
               await createOrUpdateComment(marker, body);
               return;
@@ -194,8 +197,9 @@ jobs:
                 `${warningMarker}\n` +
                 `## Invalid PR Label Noted\n\n` +
                 `Hi @${username}, a maintainer marked this PR with \`invalid-pr\`.\n\n` +
-                `VoiceForge automation will not close the PR until there is a visible correction message on the PR. This keeps closure decisions reviewable and gives contributors clear next steps.\n\n` +
-                `| Status | Details |\n` +
+                `Automation will pause before closing until a visible correction message exists on the PR. This keeps the decision reviewable and gives clear next steps.\n\n` +
+                `### Closure Guard\n\n` +
+                `| Item | Details |\n` +
                 `| --- | --- |\n` +
                 `| Maintainer label | \`invalid-pr\` |\n` +
                 `| Closure | Paused until an automation warning is present |\n` +
@@ -212,7 +216,8 @@ jobs:
               `## PR Closed By Maintainer Decision\n\n` +
               `Hi @${username}, thank you for taking the time to open this pull request.\n\n` +
               `A maintainer marked this PR as \`invalid-pr\`, so VoiceForge automation is closing it to keep the review queue focused.\n\n` +
-              `| Review Item | Decision |\n` +
+              `### Closure Summary\n\n` +
+              `| Item | Decision |\n` +
               `| --- | --- |\n` +
               `| Maintainer label | \`invalid-pr\` |\n` +
               `| PR status | Closed after maintainer review |\n` +

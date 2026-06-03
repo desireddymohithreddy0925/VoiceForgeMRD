@@ -393,24 +393,34 @@ jobs:
               await assignAuthor();
               const reviewRequest = await requestPullRequestReview(matchedProgram);
               const reviewRequestText = reviewRequest.status === 'No review request sent'
-                ? `No mentor is configured for ${matchedProgram.name} yet, so automation did not send a mentor ping. Please add this program's mentor mapping before relying on automatic review routing.\n\n`
-                : `${reviewRequest.mentions}, review is requested for this ${matchedProgram.name} PR. Please check scope, code quality, tests, and merge readiness.\n\n`;
+                ? `### Mentor Review Request\n\n` +
+                  `No mentor is configured for ${matchedProgram.name} yet, so automation did not send a mentor ping.\n\n` +
+                  `Please add this program's mentor mapping before relying on automatic review routing.\n\n`
+                : `### Mentor Review Request\n\n` +
+                  `${reviewRequest.mentions}, this ${matchedProgram.name} PR is ready for your review.\n\n` +
+                  `**Review checklist**\n` +
+                  `- [ ] Confirm the PR stays within the linked issue scope\n` +
+                  `- [ ] Review code quality, behavior, and edge cases\n` +
+                  `- [ ] Check tests or manual verification notes\n` +
+                  `- [ ] Approve, comment, or request changes through GitHub review\n\n`;
               const successCommentBody =
                 `${marker}\n` +
-                `## PR Format Check Passed\n\n` +
-                `Hi @${username}, thank you for opening this PR.\n\n` +
-                `Your PR has passed the automated structure checks, entered the maintainer review queue, and requested review from the configured ${matchedProgram.name} mentor(s).\n\n` +
-                `| Check | Status |\n` +
+                `## PR Ready For Mentor Review\n\n` +
+                `Hi @${username}, thank you for opening this PR with the required structure.\n\n` +
+                `Your PR passed the automated checks and has moved into the ${matchedProgram.name} mentor review queue.\n\n` +
+                `### Validation Summary\n\n` +
+                `| Item | Result |\n` +
                 `| --- | --- |\n` +
-                `| Program template | Passed |\n` +
+                `| Program | ${matchedProgram.name} |\n` +
                 `| Closing issue | ${linkedIssueNumbers.map(number => `#${number}`).join(', ')} |\n` +
-                `| Issue assignment | PR author matches linked issue assignee |\n` +
-                `| Title format | Conventional Commits title detected |\n` +
-                `| PR details | Description has enough review context |\n` +
+                `| Assignment check | PR author matches linked issue assignee |\n` +
+                `| Title check | Conventional Commits title detected |\n` +
+                `| Description check | Enough review context provided |\n` +
                 `| Change size | ${totalChanges} lines changed across ${files.length} file(s) |\n` +
-                `| Program mentor review | ${reviewRequest.status}: ${reviewRequest.mentions} |\n\n` +
+                `| Review request | ${reviewRequest.status}: ${reviewRequest.mentions} |\n\n` +
                 reviewRequestText +
-                `This does not mean the PR is approved yet. A maintainer will still review scope, code quality, tests, and merge readiness.\n\n` +
+                `### Contributor Note\n\n` +
+                `This does not mean the PR is approved yet. Please wait for mentor feedback before expecting merge. If changes are requested, update the same branch and keep the PR focused on the linked issue.\n\n` +
                 `VoiceForge automation`;
 
               if (existing && existing.body.trim() === successCommentBody.trim()) return;
@@ -466,23 +476,24 @@ jobs:
             const detectedLabels = [...new Set([...neutralLabelsToAdd, ...needsLabelsToAdd])];
             const commentBody =
               `${marker}\n` +
-              `## PR Update Needed\n\n` +
+              `## PR Needs A Quick Update\n\n` +
               `Hi @${username}, thank you for opening this PR.\n\n` +
-              `VoiceForge automation found a few items that need correction before this PR can enter maintainer review.\n\n` +
-              `### What Needs Attention\n\n` +
+              `The PR is close, but a few validation checks need attention before it can enter mentor review.\n\n` +
+              `### Items To Fix\n\n` +
               problems.map(problem => `- ${problem}`).join('\n') +
               `\n\n` +
-              `### How To Fix\n\n` +
+              `### Update Guide\n\n` +
               `| Area | Correction |\n` +
               `| --- | --- |\n` +
               fixRows.map(([area, correction]) => `| ${area} | ${correction} |`).join('\n') +
               `\n\n` +
-              `### Auto-Label Summary\n\n` +
+              `### Label Summary\n\n` +
               `| Category | Label(s) |\n` +
               `| --- | --- |\n` +
               `| Detected | ${detectedLabels.length > 0 ? detectedLabels.map(label => `\`${label}\``).join(', ') : 'None'} |\n` +
               `| Blockers | ${needsLabelsToAdd.length > 0 ? [...new Set(needsLabelsToAdd)].map(label => `\`${label}\``).join(', ') : 'None'} |\n\n` +
-              `After editing the PR title or description, this check will run again automatically.\n\n` +
+              `### What Happens Next\n\n` +
+              `Update the PR title or description, then let the workflow run again. Once these blockers are clear, the correct program mentor(s) will be requested for review.\n\n` +
               `VoiceForge automation`;
 
             if (existing) {

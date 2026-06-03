@@ -193,7 +193,8 @@ jobs:
                 `## ${decision.title}\n\n` +
                 `Hi @${issue.user.login}, thank you for taking the time to open this issue.\n\n` +
                 `${decision.summary}\n\n` +
-                `| Review Item | Decision |\n` +
+                `### Review Summary\n\n` +
+                `| Item | Decision |\n` +
                 `| --- | --- |\n` +
                 `| Maintainer label | \`${closeLabel}\` |\n` +
                 `| Issue status | Closing after maintainer review |\n` +
@@ -236,7 +237,8 @@ jobs:
                 `## Assignment Reopened\n\n` +
                 `This issue has been marked \`stale-assignment\` by the maintainer team.\n\n` +
                 `The previous assignment is being cleared so another contributor can request or receive assignment.\n\n` +
-                `| Review Item | Status |\n` +
+                `### Assignment Status\n\n` +
+                `| Item | Status |\n` +
                 `| --- | --- |\n` +
                 `| Previous assignee | ${assigneeMentions} |\n` +
                 `| Issue status | Open for maintainer reassignment |\n` +
@@ -274,9 +276,10 @@ jobs:
               const marker = '<!-- voiceforge-issue-go-ahead-waiting -->';
               const body =
                 `${marker}\n` +
-                `## Go Ahead Label Added\n\n` +
+                `## Approved, Waiting For Assignee\n\n` +
                 `This issue has been marked \`go ahead\`, but no contributor is assigned yet.\n\n` +
-                `| Status | Details |\n` +
+                `### Current Status\n\n` +
+                `| Item | Details |\n` +
                 `| --- | --- |\n` +
                 `| Maintainer decision | Valid for contribution |\n` +
                 `| Assignment | Waiting for maintainer assignment |\n` +
@@ -293,9 +296,10 @@ jobs:
             const marker = '<!-- voiceforge-issue-go-ahead -->';
             const body =
               `${marker}\n` +
-              `## Go Ahead Confirmed\n\n` +
+              `## Work Approved To Start\n\n` +
               `Hi ${assigneeMentions}, this issue has been reviewed and approved for work by the maintainer team.\n\n` +
-              `You may start working on this issue now. Please keep the implementation focused and open a pull request when your solution is ready.\n\n` +
+              `You may start now. Keep the implementation focused, and open a pull request when your solution is ready.\n\n` +
+              `### Start-Work Checklist\n\n` +
               `| Step | Guidance |\n` +
               `| --- | --- |\n` +
               `| Scope | Stay aligned with this issue and maintainer comments. |\n` +

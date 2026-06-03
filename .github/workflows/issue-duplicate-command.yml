@@ -169,6 +169,7 @@ jobs:
                   `${marker}\n` +
                   `## Duplicate Target Not Found\n\n` +
                   `@${context.actor}, I could not close this issue as a duplicate because #${duplicateOf} was not found.\n\n` +
+                  `### Try Again\n\n` +
                   `Please check the issue number and run the command again, for example:\n\n` +
                   `\`\`\`text\n` +
                   `/duplicate #123\n` +
@@ -186,7 +187,7 @@ jobs:
                 `${marker}\n` +
                 `## Duplicate Target Must Be An Issue\n\n` +
                 `@${context.actor}, #${duplicateOf} is a pull request, not an issue.\n\n` +
-                `Please reference the existing issue that should collect the discussion.\n\n` +
+                `Please reference the existing issue that should collect the discussion, context, and progress.\n\n` +
                 `VoiceForge automation`;
               await createOrUpdateComment(marker, errorBody);
               return;
@@ -198,7 +199,8 @@ jobs:
               `## Duplicate Issue Closed\n\n` +
               `Hi @${issue.user.login}, thank you for opening this issue.\n\n` +
               `A maintainer reviewed it and marked it as a duplicate of #${duplicateOf}. To keep discussion, progress, and review context in one place, this issue is being closed.\n\n` +
-              `| Review Item | Decision |\n` +
+              `### Duplicate Summary\n\n` +
+              `| Item | Decision |\n` +
               `| --- | --- |\n` +
               `| Duplicate of | #${duplicateOf} |\n` +
               `| Maintainer command | \`/duplicate #${duplicateOf}\` |\n` +

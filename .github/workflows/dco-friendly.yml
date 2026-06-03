@@ -123,8 +123,8 @@ jobs:
             );
 
             const body = missingDco
-              ? `${marker}\n## DCO Sign-off Missing\n\nHi @${username}, some commits in this PR are missing a valid \`Signed-off-by:\` line.\n\n### Invalid Commits\n\n${invalidCommits.map(commit => `- \`${commit.sha}\` - ${commit.title}`).join('\n')}\n\n### Fix The Most Recent Commit\n\n\`\`\`bash\ngit commit --amend --signoff\ngit push --force-with-lease\n\`\`\`\n\n### Fix Multiple Commits\n\nReplace \`N\` with the number of commits that need sign-off:\n\n\`\`\`bash\ngit rebase --signoff HEAD~N\ngit push --force-with-lease\n\`\`\`\n\nThe DCO sign-off confirms you have the right to submit this contribution. This comment updates automatically after fixes are pushed.\n\nVoiceForge automation`
-              : `${marker}\n## DCO Sign-off Verified\n\nHi @${username}, all commits currently include a valid \`Signed-off-by:\` line.\n\nYour DCO check is clear. Maintainers will continue with the normal PR review flow.\n\nVoiceForge automation`;
+              ? `${marker}\n## DCO Sign-off Needed\n\nHi @${username}, this PR is missing a valid \`Signed-off-by:\` line on one or more commits.\n\nThe DCO sign-off confirms that you have the right to submit this contribution.\n\n### Commits To Fix\n\n${invalidCommits.map(commit => `- \`${commit.sha}\` - ${commit.title}`).join('\n')}\n\n### Fix The Most Recent Commit\n\n\`\`\`bash\ngit commit --amend --signoff\ngit push --force-with-lease\n\`\`\`\n\n### Fix Multiple Commits\n\nReplace \`N\` with the number of commits that need sign-off:\n\n\`\`\`bash\ngit rebase --signoff HEAD~N\ngit push --force-with-lease\n\`\`\`\n\nAfter you push the signed commits, this comment will update automatically.\n\nVoiceForge automation`
+              : `${marker}\n## DCO Sign-off Verified\n\nHi @${username}, all commits currently include a valid \`Signed-off-by:\` line.\n\n### Status\n\n| Item | Result |\n| --- | --- |\n| DCO check | Passed |\n| Label applied | \`dco-verified\` |\n| Review flow | Maintainers can continue normal PR review |\n\nVoiceForge automation`;
 
             if (existing && existing.body.trim() === body.trim()) return;
 

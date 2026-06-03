@@ -181,22 +181,32 @@ jobs:
               const reviewerMentions = getProgramReviewerMentions(matchedProgram.label);
               const reviewerMentionText = reviewerMentions.length > 0 ? reviewerMentions.join(' ') : 'No mentor configured for this program yet';
               const reviewerRequestText = reviewerMentions.length > 0
-                ? `${reviewerMentionText}, review is requested for this ${matchedProgram.name} issue. Please check whether it should be marked \`go ahead\`, \`duplicate\`, \`not needed\`, \`out of scope\`, or assigned with priority/difficulty labels.\n\n`
-                : `No mentor is configured for ${matchedProgram.name} yet, so automation did not send a mentor ping. Please add this program's mentor mapping before relying on automatic review routing.\n\n`;
+                ? `### Mentor Review Request\n\n` +
+                  `${reviewerMentionText}, this ${matchedProgram.name} issue is ready for your review.\n\n` +
+                  `**Review checklist**\n` +
+                  `- [ ] Confirm the issue is in project scope\n` +
+                  `- [ ] Choose a decision label: \`go ahead\`, \`duplicate\`, \`not needed\`, or \`out of scope\`\n` +
+                  `- [ ] Add priority and difficulty labels if the issue should move forward\n` +
+                  `- [ ] Assign the contributor only after the issue is ready for work\n\n`
+                : `### Mentor Review Request\n\n` +
+                  `No mentor is configured for ${matchedProgram.name} yet, so automation did not send a mentor ping.\n\n` +
+                  `Please add this program's mentor mapping before relying on automatic review routing.\n\n`;
               const successBody =
                 `${marker}\n` +
-                `## Issue Intake Passed\n\n` +
-                `Hi @${username}, thank you for opening this issue with the correct template.\n\n` +
-                `Your issue has entered the maintainer review queue, and review has been requested from the configured ${matchedProgram.name} mentor(s). The team will check scope, priority, labels, and readiness before assigning it to a contributor.\n\n` +
-                `| Check | Status |\n` +
+                `## Issue Ready For Mentor Review\n\n` +
+                `Hi @${username}, thank you for using the correct ${matchedProgram.name} issue template.\n\n` +
+                `Your issue passed intake and is now waiting for a program mentor to review scope, labels, and assignment readiness.\n\n` +
+                `### Intake Summary\n\n` +
+                `| Item | Result |\n` +
                 `| --- | --- |\n` +
-                `| Program template | ${matchedProgram.name} detected |\n` +
+                `| Program | ${matchedProgram.name} |\n` +
                 `| Issue type | ${isBugTemplate ? 'Bug report' : 'Feature request'} |\n` +
-                `| Detail level | Ready for maintainer review |\n` +
-                `| Program mentor review | ${reviewerMentionText} |\n` +
-                `| Next step | Maintainer assignment |\n\n` +
+                `| Template status | Passed |\n` +
+                `| Detail level | Ready for review |\n` +
+                `| Requested mentor(s) | ${reviewerMentionText} |\n\n` +
                 reviewerRequestText +
-                `Please wait for maintainer confirmation before starting work. Assignment requests are welcome, but work should begin only after assignment.\n\n` +
+                `### Contributor Note\n\n` +
+                `Please wait for mentor confirmation before starting work. Assignment requests are welcome, but work should begin only after a mentor approves and assigns the issue.\n\n` +
                 `VoiceForge automation`;
 
               if (existing) {
@@ -219,18 +229,19 @@ jobs:
 
             const commentBody =
               `${marker}\n` +
-              `## Template Update Needed\n\n` +
+              `## Issue Needs A Quick Update\n\n` +
               `Hi @${username}, thank you for opening this issue.\n\n` +
-              `VoiceForge automation found a few items that need correction before maintainers can review and assign this issue.\n\n` +
-              `### What Needs Attention\n\n` +
+              `The issue is almost ready, but a few intake checks need attention before a mentor can review or assign it.\n\n` +
+              `### Items To Fix\n\n` +
               problems.map(problem => `- ${problem}`).join('\n') +
               `\n\n` +
-              `### How To Fix\n\n` +
+              `### Update Guide\n\n` +
               `| Area | Correction |\n` +
               `| --- | --- |\n` +
               `${templateProblems.length > 0 ? '| Template | Use one complete program issue template: GSSoC, NSOC, SSOC, or ELUSOC. |\n' : ''}` +
               `${qualityProblems.length > 0 ? '| Details | Add clear context, expected behavior, screenshots/logs if useful, and enough steps for maintainers to understand the request. |\n' : ''}` +
-              `\nAfter editing the issue, this comment will update automatically.\n\n` +
+              `\n### What Happens Next\n\n` +
+              `Edit the issue body with the missing details. This comment will update automatically after the workflow runs again.\n\n` +
               `VoiceForge automation`;
 
             if (existing) {
