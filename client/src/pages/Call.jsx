@@ -16,7 +16,24 @@ export default function Call() {
   const localVideoRef = React.useRef(null);
   const [activeProfile, setActiveProfile] = React.useState(null);
   const [language, setLanguage] = React.useState(() => {
-  return localStorage.getItem("voiceforge:language") || "en";
+  const savedLanguage = localStorage.getItem("voiceforge:language");
+
+  const legacyToCode = {
+    English: "en",
+    Hindi: "hi",
+    Spanish: "es",
+    French: "fr",
+    German: "de",
+    Portuguese: "pt",
+    Japanese: "ja",
+  };
+
+  const normalizedLanguage =
+    legacyToCode[savedLanguage] || savedLanguage;
+
+  return ["en", "hi", "es", "fr", "de", "pt", "ja"].includes(normalizedLanguage)
+    ? normalizedLanguage
+    : "en";
 });
 React.useEffect(() => {
   localStorage.setItem("voiceforge:language", language);
