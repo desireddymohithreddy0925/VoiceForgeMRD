@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "npx --prefix .. vitest run --config vitest.config.js"
   },
   "dependencies": {
     "react": "^18.3.1",

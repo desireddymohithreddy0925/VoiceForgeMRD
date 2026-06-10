@@ -19,7 +19,15 @@ export function QuickReplies({ onSelect }) {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved === null) return DEFAULT_QUICK_REPLIES;
-      return JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) && parsed.every(
+        (item) =>
+          item &&
+          typeof item.label === "string" &&
+          typeof item.phrase === "string"
+      )
+        ? parsed
+        : DEFAULT_QUICK_REPLIES;
     } catch {
       return DEFAULT_QUICK_REPLIES;
     }
@@ -35,13 +43,18 @@ export function QuickReplies({ onSelect }) {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(replies));
     } catch {
-      // storage quota exceeded — silently skip
+      console.error('Failed to persist quick replies to localStorage');
     }
   }, [replies]);
 
   const handleAdd = (e) => {
     e.preventDefault();
     const cleanPhrase = newPhrase.trim();
+
+    if (cleanPhrase.length > 120) {
+      showToast("Phrase is too long (max 120 characters)", "error");
+      return;
+    }
 
     if (!cleanPhrase) {
       showToast("Phrase cannot be empty", "error");
@@ -158,9 +171,10 @@ export function QuickReplies({ onSelect }) {
               type="text"
               value={newPhrase}
               onChange={(e) => setNewPhrase(e.target.value)}
+              maxLength={120}
               placeholder="New reply..."
               autoFocus
-              className="bg-transparent text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none dark:text-neutral-100 dark:placeholder:text-neutral-500 w-28"
+              className="flex-1 min-w-[5rem] max-w-[10rem] bg-transparent text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none dark:text-neutral-100 dark:placeholder:text-neutral-500"
             />
             <button
               type="submit"
@@ -185,7 +199,9 @@ export function QuickReplies({ onSelect }) {
 
         {replies.length === 0 && !isAdding && (
           <p className="text-xs text-neutral-400 dark:text-neutral-500 italic">
-            No quick replies. Click "Customize" to add.
+            {isEditing 
+              ? 'No quick replies. Click "Add" to create one.'
+              : 'No quick replies. Click "Customize" to add.'}
           </p>
         )}
       </div>

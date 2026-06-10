@@ -150,6 +150,7 @@ export default React.forwardRef(function VideoPreview({
       />
       {audioUrl && (
         <audio
+          key={audioUrl}
           className="mt-4 w-full"
           controls
           src={audioUrl}
