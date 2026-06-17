@@ -152,7 +152,11 @@ export function QuickReplies({ onSelect, showToast }) {
         <div className="flex items-center gap-3">
           {isEditing && (
             <button
-              onClick={() => setIsAdding(true)}
+              onClick={() => {
+                setEditingReplyId(null);
+                setEditingReplyData(null);
+                setIsAdding(true);
+              }}
               className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
               aria-label="Add new quick reply"
             >
