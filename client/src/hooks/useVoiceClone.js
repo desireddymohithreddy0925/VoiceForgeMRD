@@ -1,7 +1,6 @@
 // Provides a small client-side API for uploading a recording and saving cloned voice profiles.
 import React from "react";
 import { getAllProfiles, saveProfile, deleteProfile } from "../utils/db.js";
-import { getApiKey } from "../utils/apiKeyStorage.js";
 
 // Fix (Issue 2): must match the server-side Multer limit in server/middleware/upload.js.
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024; // 12 MB
@@ -72,10 +71,8 @@ export default function useVoiceClone() {
       formData.append("audio", audioBlob, "voiceforge-reference.webm");
       formData.append("name", name);
 
-      const apiKey = getApiKey();
       const response = await fetch("/api/voice/clone", {
         method: "POST",
-        headers: { "X-ElevenLabs-Api-Key": apiKey },
         body: formData
       });
 
