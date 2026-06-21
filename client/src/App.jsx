@@ -99,7 +99,7 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-cloud text-ink dark:bg-night dark:text-neutral-100">
       
       {/* Global Header */}
-      <header className="border-b border-ink/10 bg-white dark:border-border dark:bg-surface">
+      <header className="sticky top-0 z-50 border-b border-ink/10 bg-white dark:border-border dark:bg-surface">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
           {/* Logo + Title */}
             <div
