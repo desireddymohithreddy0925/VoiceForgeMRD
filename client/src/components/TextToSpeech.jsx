@@ -6,7 +6,7 @@ export default function TextToSpeech({ onSpeak, disabled = false, status = "idle
   const [text, setText] = React.useState("");
   const trimmedText = text.trim();
 
-const characterCount = trimmedText.length;
+const characterCount = text.length;
 
 const wordCount = trimmedText
   ? trimmedText.split(/\s+/).length
