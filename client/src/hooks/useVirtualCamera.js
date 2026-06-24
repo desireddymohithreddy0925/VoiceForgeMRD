@@ -4,6 +4,7 @@ export default function useVirtualCamera(canvasRef) {
   const [isLive, setIsLive] = React.useState(false);
   const [status, setStatus] = React.useState("Idle");
   const [stream, setStream] = React.useState(null);
+  const originalTrackRef = React.useRef(null);
 
   function browserSupportsInsertableStreams() {
     return "MediaStreamTrackProcessor" in window && "MediaStreamTrackGenerator" in window && "TransformStream" in window;
@@ -18,6 +19,7 @@ export default function useVirtualCamera(canvasRef) {
 
     const canvasStream = canvas.captureStream(30);
     const [track] = canvasStream.getVideoTracks();
+    originalTrackRef.current = track;
 
     let outputStream = canvasStream;
     let outputTrack = track;
@@ -47,6 +49,7 @@ export default function useVirtualCamera(canvasRef) {
   }
 
   function stop() {
+    originalTrackRef.current?.stop();
     stream?.getTracks().forEach((track) => track.stop());
     setStream(null);
     setIsLive(false);
@@ -55,6 +58,7 @@ export default function useVirtualCamera(canvasRef) {
 
   React.useEffect(() => {
     return () => {
+      originalTrackRef.current?.stop();
       stream?.getTracks().forEach((track) => track.stop());
     };
   }, [stream]);
