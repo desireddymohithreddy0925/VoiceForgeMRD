@@ -1,6 +1,6 @@
 // Provides a small client-side API for uploading a recording and saving cloned voice profiles.
 import React from "react";
-import { getAllProfiles, saveProfile, deleteProfile } from "../utils/db.js";
+import { getAllProfiles, saveProfile, deleteProfile, clearStorage } from "../utils/db.js";
 
 // Fix (Issue 2): must match the server-side Multer limit in server/middleware/upload.js.
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024; // 12 MB
@@ -32,6 +32,12 @@ export async function deleteVoiceProfile(voiceId) {
     localStorage.setItem(ACTIVE_KEY, nextProfiles[0]?.voice_id || "");
   }
   return nextProfiles;
+}
+
+export async function clearAllVoiceProfiles() {
+  await clearStorage();
+  localStorage.setItem(ACTIVE_KEY, "");
+  return [];
 }
 
 export async function getActiveVoiceProfile() {
