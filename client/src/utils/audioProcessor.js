@@ -10,6 +10,7 @@ export class AudioProcessor {
     this.source = null;
     this.analyzer = null;
     this.currentMelSpectrogram = null;
+    this.currentVolume = 0;
   }
 
   /**
@@ -45,10 +46,15 @@ export class AudioProcessor {
       audioContext: this.audioContext,
       source: this.source,
       bufferSize: 512, // Must be a power of 2
-      featureExtractors: ["melSpectrogram"],
+      featureExtractors: ["melSpectrogram", "rms"],
       callback: (features) => {
-        if (features && features.melSpectrogram) {
-          this.currentMelSpectrogram = features.melSpectrogram;
+        if (features) {
+          if (features.melSpectrogram) {
+            this.currentMelSpectrogram = features.melSpectrogram;
+          }
+          if (features.rms !== undefined) {
+            this.currentVolume = features.rms;
+          }
         }
       },
     });
@@ -63,6 +69,14 @@ export class AudioProcessor {
    */
   getLatestFeatures() {
     return this.currentMelSpectrogram;
+  }
+
+  /**
+   * Returns the current RMS volume to drive fallback mouth animation.
+   * @returns {number}
+   */
+  getVolume() {
+    return this.currentVolume || 0;
   }
 
   /**

@@ -20,7 +20,7 @@ export default React.forwardRef(function VideoPreview({
   const faceProcessorRef = useRef(null);
   const ortSessionRef = useRef(null);
   const [modelStatus, setModelStatus] = React.useState(
-    "Fallback animation ready",
+    "Audio-driven animation ready",
   );
   const { theme } = useTheme();
 
@@ -72,8 +72,8 @@ export default React.forwardRef(function VideoPreview({
         setModelStatus("ONNX Wav2Lip model loaded");
       } catch (err) {
         console.warn("Wav2Lip initialization skipped:", err.message);
-        setModelStatus("Fallback mouth animation active");
-        // TODO: Replace fallback canvas mouth animation with real browser Wav2Lip ONNX inference.
+        setModelStatus("Audio-driven animation active");
+        // TODO: Replace audio-driven mouth animation with real browser Wav2Lip ONNX inference.
       }
     }
     loadModel();
@@ -155,7 +155,14 @@ export default React.forwardRef(function VideoPreview({
         }
 
         if (!inferenceSucceeded) {
-          const mouthOpen = isSpeaking ? 14 + Math.sin(timestamp / 80) * 8 : 14;
+          let mouthOpen = 14;
+          if (isSpeaking && audioProcessorRef.current) {
+            const vol = audioProcessorRef.current.getVolume();
+            // Scale RMS volume (usually 0 to 0.3) to mouth height.
+            // vol * 150 provides a responsive map to pixels, capped at 30 extra pixels.
+            const extraOpen = Math.min(30, vol * 150);
+            mouthOpen = 14 + extraOpen;
+          }
           const currentCalibration = calibrationRef.current || {};
           const xOffset = typeof currentCalibration.xOffset === "number" && !isNaN(currentCalibration.xOffset)
             ? Math.max(-400, Math.min(400, currentCalibration.xOffset))
