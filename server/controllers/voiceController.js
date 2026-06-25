@@ -187,6 +187,7 @@ async function generateClonedVoice(
     }
     return audioUrl;
   } catch (error) {
+    console.error("[VoiceForge] Gradio predict error:", error);
     // Clear cache on failure so next request attempts reconnection
     cachedGradioClient = null;
     currentSpaceIdentifier = null;
