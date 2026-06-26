@@ -178,6 +178,8 @@ Go to Settings > Devices > Camera and select **OBS Virtual Camera**.
 
 ![Microsoft Teams Camera Picker](docs/images/teams_camera_picker.png)
 
+**For detailed setup guides (including Discord and Webex) and troubleshooting tips, see our [Virtual Camera Guide](docs/virtual-camera.md).**
+
 ## API
 
 | Method | Endpoint | Description |
@@ -200,7 +202,7 @@ Go to Settings > Devices > Camera and select **OBS Virtual Camera**.
 - TODO: Replace the placeholder `models/wav2lip.onnx` with a real lightweight browser Wav2Lip ONNX model.
 - TODO: Implement real ONNX Runtime Web Wav2Lip inference.
 - TODO: Replace the fallback mouth animation with model-driven mouth movement.
-- TODO: Add richer virtual camera documentation for OBS and each call provider.
+- Done: Add richer virtual camera documentation for OBS and each call provider.
 - TODO: Add automated browser tests for camera and microphone permission flows.
 - TODO: Persist voice profiles across server restarts (database or object-store backend).
 
