@@ -14,7 +14,7 @@ import { useSpeechHistory } from "../hooks/useSpeechHistory";
 import { LanguageSelector } from "./LanguageSelector.jsx";
 import { loadLanguage, persistLanguage } from "../utils/languages.js";
 
-const MAX_CHARS = 500;
+const MAX_CHARS = 300;
 
 export default function VoiceForge() {
   const [inputText, setInputText] = useState("");
