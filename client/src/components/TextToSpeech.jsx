@@ -83,6 +83,12 @@ if (estimatedDuration > 30) {
         ].join(" ")}
         placeholder="Type what you want to say..."
       />
+      <p
+        className="mt-2 text-sm text-ink/65 dark:text-muted"
+        aria-live="polite"
+      >
+        Characters: {characterCount}
+      </p>
       
       {charsLeft < 0 && (
         <p id="tts-char-hint" role="alert" className="mt-2 text-xs font-semibold text-red-500">
