@@ -103,7 +103,7 @@ function Step2VoiceSettings({ onBack, onContinue }) {
             Voice Workspace Parameters
           </h3>
           <p className="mt-1 text-sm text-ink/60 dark:text-muted">
-             Fine-tune how Chatterbox generates your cloned speech. Changes are
+            Fine-tune how Chatterbox generates your cloned speech. Changes are
             saved instantly and shared across all tabs.
           </p>
         </div>
@@ -208,14 +208,7 @@ export default function Onboarding({ onReady }) {
   const { cloneVoice, status, error: apiError } = useVoiceClone();
   const { toasts, showToast } = useToast();
   const isCloning = status === "cloning";
-<<<<<<< HEAD
   const [serverStatus, setServerStatus] = React.useState({ isMock: false, space: "" });
-=======
-  const [serverStatus, setServerStatus] = React.useState({
-    isMock: false,
-    hasServerKey: false,
-  });
->>>>>>> 7eeb8da (refactor: reuse voice name length constants)
 
   React.useEffect(() => {
     fetch("/api/voice/status")
