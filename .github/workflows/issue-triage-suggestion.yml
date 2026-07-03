@@ -290,6 +290,7 @@ jobs:
                         content:
                           'You are a GitHub issue triage assistant for VoiceForge. ' +
                           'You only provide advisory recommendations for maintainers. ' +
+                          'Keep your reason concise — 2 to 3 complete sentences only. Never leave a sentence unfinished. ' +
                           'Never close issues, never assign users, and never use final maintainer labels. ' +
                           'Evaluate the issue description, title, and context against these rules:\n' +
                           '1. Legacy Check: If the issue mentions ElevenLabs, legacy ElevenLabs API keys (e.g. ELEVEN_LABS_API_KEY, XI_API_KEY), or ElevenLabs settings, recommend "suggest-out-of-scope" or "suggest-already-addressed" stating ElevenLabs was replaced by the local Chatterbox engine.\n' +
@@ -319,7 +320,7 @@ jobs:
                           properties: {
                             label: { type: 'string', enum: suggestionLabels },
                             confidence: { type: 'number', minimum: 0, maximum: 1 },
-                            reason: { type: 'string', maxLength: 300 },
+                            reason: { type: 'string' },
                             similarIssues: {
                               type: 'array',
                               maxItems: 3,
