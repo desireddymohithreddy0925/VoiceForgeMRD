@@ -19,6 +19,7 @@ export default React.forwardRef(function VideoPreview({
   const audioProcessorRef = useRef(null);
   const faceProcessorRef = useRef(null);
   const ortSessionRef = useRef(null);
+  const waveRef = useRef(null);
   const [modelStatus, setModelStatus] = React.useState(
     "Audio-driven animation ready",
   );
@@ -124,6 +125,7 @@ export default React.forwardRef(function VideoPreview({
       } catch (err) {
         console.warn("Wav2Lip initialization skipped:", err.message);
         setModelStatus("Audio-driven animation active");
+        audioProcessorRef.current = new AudioProcessor();
         // TODO: Replace audio-driven mouth animation with real browser Wav2Lip ONNX inference.
       }
     }
@@ -271,6 +273,16 @@ export default React.forwardRef(function VideoPreview({
         }
       }
 
+      if (waveRef.current && audioProcessorRef.current) {
+        const frequencies = audioProcessorRef.current.getFrequencyData();
+        const spans = waveRef.current.querySelectorAll("span");
+        spans.forEach((span, index) => {
+          const freq = frequencies[index] || 0;
+          const height = 4 + (freq / 255.0) * 16;
+          span.style.height = `${height}px`;
+        });
+      }
+
       animationRef.current = requestAnimationFrame(draw);
     }
 
@@ -301,15 +313,16 @@ export default React.forwardRef(function VideoPreview({
         </div>
         {isSpeaking && (
           <div
+            ref={waveRef}
             className="recording-wave flex h-5 items-center gap-0.5"
             role="status"
             aria-label="Avatar speech active"
           >
-            {[14, 20, 16, 18, 12].map((height, index) => (
+            {[0, 0, 0, 0, 0].map((_, index) => (
               <span
                 key={index}
                 className="block w-[3px] bg-coral rounded-full"
-                style={{ height: `${height}px` }}
+                style={{ height: "4px" }}
               />
             ))}
           </div>
