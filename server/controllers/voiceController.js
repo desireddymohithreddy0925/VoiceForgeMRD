@@ -278,7 +278,7 @@ export async function cloneVoice(request, response, next) {
     if (getIsMock()) {
       console.warn("[VoiceForge] MOCK_CHATTERBOX: skipping real voice clone, returning fixture.");
       response.json({
-        voice_id: "mock-voice-id-00000000",
+        voice_id: request.body.voice_id || "mock-voice-id-00000000",
         name: request.body.name || "VoiceForge Voice (mock)"
       });
       return;

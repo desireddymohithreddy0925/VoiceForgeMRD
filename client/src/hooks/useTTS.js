@@ -107,6 +107,40 @@ export default function useTTS() {
         }),
       });
 
+      if (response.status === 404) {
+        // Self-healing fallback:
+        // 1. Look up the voice profile in IndexedDB
+        const profile = await getProfile(voiceId);
+        if (profile && profile.audioBlob) {
+          // 2. Quietly re-clone (POST /api/voice/clone)
+          const formData = new FormData();
+          formData.append("audio", profile.audioBlob, "voiceforge-reference.webm");
+          formData.append("name", profile.name);
+          formData.append("voice_id", voiceId);
+
+          const cloneResponse = await fetch("/api/voice/clone", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (cloneResponse.ok) {
+            // 3. Retry the speak request
+            response = await fetch("/api/voice/speak", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                text,
+                voice_id: voiceId,
+                language_code,
+                voice_settings: voiceSettings,
+              }),
+            });
+          }
+        }
+      }
+
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
         // If voice profile is missing on the backend (404), trigger auto-reclone from IndexedDB

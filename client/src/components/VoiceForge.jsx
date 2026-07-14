@@ -16,7 +16,7 @@ import { loadLanguage, persistLanguage } from "../utils/languages.js";
 import useTTS from "../hooks/useTTS.js";
 import { getActiveVoiceProfile } from "../hooks/useVoiceClone.js";
 
-const MAX_CHARS = 500;
+const MAX_CHARS = 300;
 
 export default function VoiceForge() {
   const [inputText, setInputText] = useState("");

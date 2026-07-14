@@ -174,6 +174,7 @@ export default React.forwardRef(function VideoPreview({
         await faceProcessorRef.current.initialize();
 
         const ort = await import("onnxruntime-web");
+        ortRef.current = ort;
         ortSessionRef.current = await ort.InferenceSession.create(modelBytes);
         setModelStatus("ONNX Wav2Lip model loaded");
       } catch (err) {
@@ -321,6 +322,7 @@ export default React.forwardRef(function VideoPreview({
       const drawMouth = isSpeaking || isCalibratingRef.current;
       if (drawMouth) {
         let inferenceSucceeded = false;
+        const useONNX = isSpeaking && ortSessionRef.current && audioProcessorRef.current && faceProcessorRef.current && ortRef.current;
 
         // Try ONNX Inference first
         if (isSpeaking && ortSessionRef.current && audioProcessorRef.current && faceProcessorRef.current) {

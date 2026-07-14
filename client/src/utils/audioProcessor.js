@@ -3,7 +3,7 @@ import { PitchShifter } from "./pitchShifter.js";
 
 /**
  * Extracts Mel-spectrogram features from an HTMLMediaElement using the Web Audio API.
- * This is a simplified wrapper for real-time inference.
+ * Tracks a history of mel-spectrograms for Wav2Lip ONNX real-time inference.
  */
 export class AudioProcessor {
   constructor() {
@@ -60,9 +60,10 @@ export class AudioProcessor {
       audioElement._audioSourceNode = this.source;
     }
 
-    // Configure Meyda to extract the melSpectrogram
-    // Typical Wav2Lip uses specific mel bands and FFT sizes,
-    // this will need tuning to match the exact ONNX model requirements.
+    // Reset history when initialized/re-initialized
+    this.melHistory = [];
+
+    // Configure Meyda to extract the melSpectrogram with 80 bands
     this.analyzer = Meyda.createMeydaAnalyzer({
       audioContext: this.audioContext,
       source: this.source,
@@ -109,7 +110,23 @@ export class AudioProcessor {
    * @returns {Float32Array|null}
    */
   getLatestFeatures() {
-    return this.currentMelSpectrogram;
+    const history = this.melHistory || [];
+    const flat = new Float32Array(80 * 16);
+    
+    // Fill the flat array in shape [1, 1, 80, 16] where time step changes fastest.
+    // Flat index = b * 16 + t
+    const missing = 16 - history.length;
+    for (let b = 0; b < 80; b++) {
+      for (let t = 0; t < 16; t++) {
+        if (t >= missing) {
+          const frame = history[t - missing];
+          flat[b * 16 + t] = frame[b] || 0;
+        } else {
+          flat[b * 16 + t] = 0;
+        }
+      }
+    }
+    return flat;
   }
 
   /**
@@ -144,6 +161,7 @@ export class AudioProcessor {
       this.audioContext.close();
       this.audioContext = null;
     }
+    this.melHistory = [];
   }
 
   setBass(gain) {
