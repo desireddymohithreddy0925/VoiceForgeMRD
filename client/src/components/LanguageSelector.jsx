@@ -1,7 +1,7 @@
 // Searchable, accessible language picker with flag indicators and region grouping.
 //
 // Used on the Call page, Compose page (compact mode), and Settings page
-// as the unified way to select an output language for ElevenLabs TTS.
+// as the unified way to select an output language for Chatterbox TTS.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Check, Search, Globe, X } from "lucide-react";
@@ -216,7 +216,8 @@ export function LanguageSelector({ value, onChange, id, compact = false }) {
             "absolute z-50 mt-2 flex flex-col overflow-hidden rounded-xl border shadow-lg",
             "border-neutral-200/80 bg-white dark:border-border dark:bg-surface",
             "animate-fade-in-up",
-            compact ? "right-0 w-72" : "left-0 right-0 min-w-[320px] sm:w-96",
+            "max-w-[calc(100vw-2rem)]",
+            compact ? "left-0 w-72" : "left-0 right-0 min-w-0 sm:min-w-[320px] sm:w-96", 
           ].join(" ")}
           style={{ maxHeight: "420px" }}
         >

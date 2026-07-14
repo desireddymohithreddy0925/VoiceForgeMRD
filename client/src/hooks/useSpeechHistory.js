@@ -8,7 +8,10 @@ import { useState, useEffect, useCallback } from "react";
 
 const HISTORY_KEY = "vf_history";
 const FAVS_KEY = "vf_favorites";
+const TRANSCRIPT_KEY = "vf_transcript";
+const ANALYTICS_KEY = "vf_analytics_history";
 const MAX_HISTORY = 25;
+const MAX_ANALYTICS = 2000;
 
 /**
  * Safely reads a JSON value from localStorage.
@@ -17,6 +20,31 @@ const MAX_HISTORY = 25;
 function readStorage(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
+
+    if (!raw) {
+      return fallback;
+    }
+
+    const parsed = JSON.parse(raw);
+
+    // Ensure correct structure
+    if (Array.isArray(fallback)) {
+      return Array.isArray(parsed) ? parsed : fallback;
+    }
+
+    return parsed ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Safely reads a JSON value from sessionStorage.
+ * Returns `fallback` if the key is missing or the value is unparseable.
+ */
+function readSessionStorage(key, fallback) {
+  try {
+    const raw = sessionStorage.getItem(key);
 
     if (!raw) {
       return fallback;
@@ -53,6 +81,8 @@ export function useSpeechHistory() {
   const [favorites, setFavorites] = useState(
     () => new Set(readStorage(FAVS_KEY, []))
   );
+  const [sessionTranscript, setSessionTranscript] = useState(() => readSessionStorage(TRANSCRIPT_KEY, []));
+  const [analyticsHistory, setAnalyticsHistory] = useState(() => readStorage(ANALYTICS_KEY, []));
 
   // ── Persistence ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -65,11 +95,27 @@ export function useSpeechHistory() {
 
   useEffect(() => {
     try {
+      sessionStorage.setItem(TRANSCRIPT_KEY, JSON.stringify(sessionTranscript));
+    } catch {
+      /* storage quota exceeded — silently skip */
+    }
+  }, [sessionTranscript]);
+
+  useEffect(() => {
+    try {
       localStorage.setItem(FAVS_KEY, JSON.stringify([...favorites]));
     } catch {
       /* storage quota exceeded — silently skip */
     }
   }, [favorites]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ANALYTICS_KEY, JSON.stringify(analyticsHistory));
+    } catch {
+      /* storage quota exceeded — silently skip */
+    }
+  }, [analyticsHistory]);
 
   // ── Actions ──────────────────────────────────────────────────────────────
 
@@ -83,28 +129,46 @@ export function useSpeechHistory() {
  * - moves duplicate entries to top
  * - enforces MAX_HISTORY limit
  *
- * @param {string} text - Message text to store
- */
-const addMessage = useCallback((text) => {
+   * @param {string} text - Message text to store
+   * @param {string} lang - Language code
+   */
+const addMessage = useCallback((text, lang = "en-US") => {
   const trimmed = text.trim();
 
   if (!trimmed) return;
+
+  const timestamp = Date.now();
+
+  setSessionTranscript((prev) => [
+  ...prev,
+  {
+    text: trimmed,
+    timestamp,
+    status: "success",
+    language: lang,
+  },
+]);
+
+  setAnalyticsHistory((prev) => {
+    const newEntry = { id: crypto.randomUUID(), text: trimmed, timestamp, language: lang };
+    const updated = [newEntry, ...prev];
+    return updated.slice(0, MAX_ANALYTICS);
+  });
 
   setHistory((prev) => {
     // Check existing message
     const existing = prev.find((m) => m.text === trimmed);
 
-    // Preserve existing ID if duplicate found
-    const entry = existing || {
-      id: crypto.randomUUID(),
-      text: trimmed,
-      timestamp: Date.now(),
-    };
+    // Preserve existing ID if duplicate found, but update timestamp
+    // so re-spoken messages sort correctly after a page reload.
+    const updatedEntry = existing
+      ? { ...existing, timestamp: Date.now() }
+      : { id: crypto.randomUUID(), text: trimmed, timestamp: Date.now() };
 
     // Move duplicate to top instead of recreating
     const updated = [
-      entry,
-      ...prev.filter((m) => m.id !== entry.id),
+      updatedEntry,
+      ...prev.filter((m) => m.id !== updatedEntry.id),
     ];
 
     return updated.slice(0, MAX_HISTORY);
@@ -140,11 +204,15 @@ const addMessage = useCallback((text) => {
   const clearHistory = useCallback(() => {
     setHistory([]);
     setFavorites(new Set());
+    setSessionTranscript([]);
+    setAnalyticsHistory([]);
   }, []);
 
   return {
     history,
     favorites,
+    sessionTranscript,
+    analyticsHistory,
     addMessage,
     removeMessage,
     toggleFavorite,

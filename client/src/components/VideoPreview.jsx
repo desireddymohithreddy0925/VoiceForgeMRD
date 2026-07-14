@@ -2,6 +2,8 @@
 import React from "react";
 import { useTheme } from "./ThemeContext";
 import { useEffect, useRef } from "react";
+import { AudioProcessor } from "../utils/audioProcessor";
+import { FaceProcessor } from "../utils/faceProcessor";
 
 export default React.forwardRef(function VideoPreview({
   webcamStream,
@@ -14,18 +16,67 @@ export default React.forwardRef(function VideoPreview({
   const videoRef = React.useRef(null);
   const animationRef = React.useRef(null);
   const audioRef = useRef(null);   
+  const audioProcessorRef = useRef(null);
+  const faceProcessorRef = useRef(null);
+  const ortSessionRef = useRef(null);
   const [modelStatus, setModelStatus] = React.useState(
-    "Fallback animation ready",
+    "Audio-driven animation ready",
   );
   const { theme } = useTheme();
 
   const calibrationRef = React.useRef(calibration);
   const isCalibratingRef = React.useRef(isCalibrating);
 
-  const audioContextRef = React.useRef(null);
-  const analyserRef = React.useRef(null);
-  const sourceRef = React.useRef(null);
-  const volumeRef = React.useRef(0);
+  const [blurEnabled, setBlurEnabled] = React.useState(false);
+  const segmenterRef = React.useRef(null);
+  const isSegmentingRef = React.useRef(false);
+  const maskCanvasRef = React.useRef(null);
+
+  React.useEffect(() => {
+    async function initSegmenter() {
+      try {
+        const { SelfieSegmentation } = await import("@mediapipe/selfie_segmentation");
+        const segmenter = new SelfieSegmentation({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
+        });
+        segmenter.setOptions({
+          modelSelection: 1,
+        });
+        segmenter.onResults((results) => {
+          if (!maskCanvasRef.current) {
+            maskCanvasRef.current = document.createElement("canvas");
+          }
+          const mCanvas = maskCanvasRef.current;
+          mCanvas.width = results.image.width;
+          mCanvas.height = results.image.height;
+          const mCtx = mCanvas.getContext("2d");
+          
+          mCtx.save();
+          mCtx.clearRect(0, 0, mCanvas.width, mCanvas.height);
+          
+          mCtx.drawImage(results.segmentationMask, 0, 0, mCanvas.width, mCanvas.height);
+          
+          mCtx.globalCompositeOperation = "source-in";
+          mCtx.drawImage(results.image, 0, 0, mCanvas.width, mCanvas.height);
+          
+          mCtx.globalCompositeOperation = "destination-over";
+          mCtx.filter = "blur(12px)";
+          mCtx.drawImage(results.image, 0, 0, mCanvas.width, mCanvas.height);
+          
+          mCtx.restore();
+          
+          isSegmentingRef.current = false;
+        });
+        
+        // Pre-initialize
+        await segmenter.initialize();
+        segmenterRef.current = segmenter;
+      } catch (err) {
+        console.error("Failed to load MediaPipe segmenter", err);
+      }
+    }
+    initSegmenter();
+  }, []);
 
   React.useEffect(() => {
     calibrationRef.current = calibration;
@@ -34,96 +85,6 @@ export default React.forwardRef(function VideoPreview({
   React.useEffect(() => {
     isCalibratingRef.current = isCalibrating;
   }, [isCalibrating]);
-
-  // Setup Web Audio API context and connect the audio element
-  const setupAudioContext = React.useCallback(() => {
-    if (!audioRef.current || audioContextRef.current) return;
-
-    try {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      const ctx = new AudioContextClass();
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 256;
-
-      const source = ctx.createMediaElementSource(audioRef.current);
-      source.connect(analyser);
-      analyser.connect(ctx.destination);
-
-      audioContextRef.current = ctx;
-      analyserRef.current = analyser;
-      sourceRef.current = source;
-    } catch (err) {
-      console.error("Failed to initialize Web Audio API:", err);
-    }
-  }, []);
-
-  // Handle HTML audio events
-  const handlePlay = React.useCallback(() => {
-    onSpeakingChange?.(true);
-    setupAudioContext();
-    if (audioContextRef.current && audioContextRef.current.state === "suspended") {
-      audioContextRef.current.resume().catch((err) => {
-        console.warn("Failed to resume AudioContext on play:", err);
-      });
-    }
-  }, [setupAudioContext, onSpeakingChange]);
-
-  const handlePause = React.useCallback(() => {
-    onSpeakingChange?.(false);
-  }, [onSpeakingChange]);
-
-  const handleEnded = React.useCallback(() => {
-    onSpeakingChange?.(false);
-  }, [onSpeakingChange]);
-
-  const handleError = React.useCallback(() => {
-    onSpeakingChange?.(false);
-  }, [onSpeakingChange]);
-
-  // Proactively resume context on user interactions (best practice for autoplay warning prevention)
-  React.useEffect(() => {
-    const resumeContext = () => {
-      if (audioContextRef.current && audioContextRef.current.state === "suspended") {
-        audioContextRef.current.resume().catch((err) => {
-          console.warn("Failed to resume AudioContext on interaction:", err);
-        });
-      }
-    };
-
-    window.addEventListener("click", resumeContext);
-    window.addEventListener("keydown", resumeContext);
-    return () => {
-      window.removeEventListener("click", resumeContext);
-      window.removeEventListener("keydown", resumeContext);
-    };
-  }, []);
-
-  // Clean up AudioContext and nodes on unmount to prevent leaks
-  React.useEffect(() => {
-    return () => {
-      if (sourceRef.current) {
-        try {
-          sourceRef.current.disconnect();
-        } catch (e) {
-          console.warn("Error disconnecting audio source:", e);
-        }
-      }
-      if (analyserRef.current) {
-        try {
-          analyserRef.current.disconnect();
-        } catch (e) {
-          console.warn("Error disconnecting analyser:", e);
-        }
-      }
-      if (audioContextRef.current) {
-        try {
-          audioContextRef.current.close();
-        } catch (e) {
-          console.warn("Error closing AudioContext:", e);
-        }
-      }
-    };
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -135,6 +96,14 @@ export default React.forwardRef(function VideoPreview({
     };
   }, [onSpeakingChange]);
 
+  // Initialize AudioProcessor when audio element is ready
+  useEffect(() => {
+    if (audioUrl && audioRef.current && audioProcessorRef.current && !audioRef.current.dataset.audioProcessorInitialized) {
+      audioProcessorRef.current.initialize(audioRef.current);
+      audioRef.current.dataset.audioProcessorInitialized = "true";
+    }
+  }, [audioUrl]);
+
   React.useEffect(() => {
     async function loadModel() {
       try {
@@ -143,15 +112,34 @@ export default React.forwardRef(function VideoPreview({
         if (!modelResponse.ok || modelBytes[0] === 35) {
           throw new Error("Placeholder Wav2Lip model detected.");
         }
+        
+        // Initialize processors
+        audioProcessorRef.current = new AudioProcessor();
+        faceProcessorRef.current = new FaceProcessor();
+        await faceProcessorRef.current.initialize();
+
         const ort = await import("onnxruntime-web");
-        await ort.InferenceSession.create(modelBytes);
+        ortSessionRef.current = await ort.InferenceSession.create(modelBytes);
         setModelStatus("ONNX Wav2Lip model loaded");
-      } catch {
-        setModelStatus("Fallback mouth animation active");
-        // TODO: Replace fallback canvas mouth animation with real browser Wav2Lip ONNX inference.
+      } catch (err) {
+        console.warn("Wav2Lip initialization skipped:", err.message);
+        setModelStatus("Audio-driven animation active");
+        // TODO: Replace audio-driven mouth animation with real browser Wav2Lip ONNX inference.
       }
     }
     loadModel();
+
+    return () => {
+      if (audioProcessorRef.current) {
+        audioProcessorRef.current.dispose();
+      }
+      if (faceProcessorRef.current) {
+        faceProcessorRef.current.dispose();
+      }
+      if (ortSessionRef.current) {
+        ortSessionRef.current.release();
+      }
+    };
   }, []);
 
   React.useEffect(() => {
@@ -171,13 +159,32 @@ export default React.forwardRef(function VideoPreview({
     const textColor = isDark ? "#e2e8f0" : "#16201d";
     const mouthColor = isDark ? "rgba(226, 232, 240, 0.82)" : "rgba(22, 32, 29, 0.82)";
 
-    function draw() {
+    let lastSyncTime = 0;
+    let audioTimeOffset = null;
+
+    function draw(timestamp) {
       context.fillStyle = bgColor;
       context.fillRect(0, 0, canvas.width, canvas.height);
 
       const video = videoRef.current;
       if (video?.readyState >= 2) {
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        if (blurEnabled && segmenterRef.current) {
+          if (!isSegmentingRef.current) {
+            isSegmentingRef.current = true;
+            segmenterRef.current.send({ image: video }).catch((err) => {
+              console.error(err);
+              isSegmentingRef.current = false;
+            });
+          }
+          if (maskCanvasRef.current) {
+            context.drawImage(maskCanvasRef.current, 0, 0, canvas.width, canvas.height);
+          } else {
+            // Draw video normally if first frame is not ready
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+          }
+        } else {
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        }
       } else {
         context.fillStyle = textColor;
         context.font = "600 24px Inter, sans-serif";
@@ -191,58 +198,77 @@ export default React.forwardRef(function VideoPreview({
 
       const drawMouth = isSpeaking || isCalibratingRef.current;
       if (drawMouth) {
-        // Calculate reactive volume
-        let targetVolume = 0;
-        if (analyserRef.current && isSpeaking) {
-          const analyser = analyserRef.current;
-          const bufferLength = analyser.fftSize;
-          const dataArray = new Uint8Array(bufferLength);
-          analyser.getByteTimeDomainData(dataArray);
+        let inferenceSucceeded = false;
 
-          let sumSquares = 0;
-          for (let i = 0; i < bufferLength; i++) {
-            const normalized = (dataArray[i] - 128) / 128;
-            sumSquares += normalized * normalized;
+        // Try ONNX Inference first
+        if (isSpeaking && ortSessionRef.current && audioProcessorRef.current && faceProcessorRef.current) {
+          try {
+             // 1. Get Audio Features
+             const melFeatures = audioProcessorRef.current.getLatestFeatures();
+             
+             // 2. Synchronize visual timestamp to the audio master clock to prevent drift
+             let syncTimestamp = timestamp;
+             const audioTime = audioProcessorRef.current.getAudioTime() * 1000;
+             if (audioTime > 0) {
+                if (audioTimeOffset === null) {
+                   audioTimeOffset = timestamp - audioTime;
+                }
+                const targetSyncTime = audioTime + audioTimeOffset;
+                // MediaPipe requires strictly increasing timestamps
+                syncTimestamp = targetSyncTime <= lastSyncTime ? lastSyncTime + 1 : targetSyncTime;
+                lastSyncTime = syncTimestamp;
+             }
+
+             // 3. Get Face Crop
+             const landmarks = faceProcessorRef.current.detectFace(video, syncTimestamp);
+             
+             if (melFeatures && landmarks) {
+               // TODO: Construct Tensors and run inference when real model is available
+               // const audioTensor = new ort.Tensor('float32', melFeatures, [1, 1, 80, 16]);
+               // const videoCrop = faceProcessorRef.current.cropMouthRegion(canvas, landmarks, tempCanvas);
+               // const videoTensor = ... convert videoCrop to tensor ...
+               // const results = await ortSessionRef.current.run({ audio: audioTensor, video: videoTensor });
+               // ... draw results back to canvas ...
+               
+               // inferenceSucceeded = true;
+             }
+          } catch (e) {
+             console.error("Inference loop error:", e);
           }
-          const rms = Math.sqrt(sumSquares / bufferLength);
-          // Amplifying RMS value of speech to make mouth movement visually distinct
-          targetVolume = Math.min(1.0, rms * 6.0);
         }
 
-        // Smooth volume using linear interpolation (lerp)
-        volumeRef.current = volumeRef.current * 0.6 + targetVolume * 0.4;
-        const currentVolume = volumeRef.current;
+        if (!inferenceSucceeded) {
+          let mouthOpen = 14;
+          if (isSpeaking && audioProcessorRef.current) {
+            const vol = audioProcessorRef.current.getVolume();
+            // Scale RMS volume (usually 0 to 0.3) to mouth height.
+            // vol * 150 provides a responsive map to pixels, capped at 30 extra pixels.
+            const extraOpen = Math.min(30, vol * 150);
+            mouthOpen = 14 + extraOpen;
+          }
+          const currentCalibration = calibrationRef.current || {};
+          const xOffset = typeof currentCalibration.xOffset === "number" && !isNaN(currentCalibration.xOffset)
+            ? Math.max(-400, Math.min(400, currentCalibration.xOffset))
+            : 0;
+          const yOffset = typeof currentCalibration.yOffset === "number" && !isNaN(currentCalibration.yOffset)
+            ? Math.max(-250, Math.min(150, currentCalibration.yOffset))
+            : 0;
+          const scale = typeof currentCalibration.scale === "number" && !isNaN(currentCalibration.scale)
+            ? Math.max(0.5, Math.min(2.5, currentCalibration.scale))
+            : 1.0;
 
-        // Map currentVolume to width and height
-        // If not speaking (but calibrating), show a static calibration baseline mouth shape (currentVolume = 0.5 equivalent)
-        const effectiveVolume = isSpeaking ? currentVolume : 0.5;
+          const centerX = canvas.width / 2 + xOffset;
+          const centerY = canvas.height * 0.63 + yOffset;
+          const radiusX = 56 * scale;
+          const radiusY = mouthOpen * scale;
 
-        const currentCalibration = calibrationRef.current || {};
-        const xOffset = typeof currentCalibration.xOffset === "number" && !isNaN(currentCalibration.xOffset)
-          ? Math.max(-400, Math.min(400, currentCalibration.xOffset))
-          : 0;
-        const yOffset = typeof currentCalibration.yOffset === "number" && !isNaN(currentCalibration.yOffset)
-          ? Math.max(-250, Math.min(150, currentCalibration.yOffset))
-          : 0;
-        const scale = typeof currentCalibration.scale === "number" && !isNaN(currentCalibration.scale)
-          ? Math.max(0.5, Math.min(2.5, currentCalibration.scale))
-          : 1.0;
-
-        const centerX = canvas.width / 2 + xOffset;
-        const centerY = canvas.height * 0.63 + yOffset;
-
-        const baseRadiusX = 44 + effectiveVolume * 12; // ranges from 44 to 56
-        const baseRadiusY = 2 + effectiveVolume * 22;  // ranges from 2 to 24
-
-        const radiusX = Math.max(0.01, baseRadiusX * scale);
-        const radiusY = Math.max(0.01, baseRadiusY * scale);
-
-        context.save();
-        context.fillStyle = mouthColor;
-        context.beginPath();
-        context.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2);
-        context.fill();
-        context.restore();
+          context.save();
+          context.fillStyle = mouthColor;
+          context.beginPath();
+          context.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2);
+          context.fill();
+          context.restore();
+        }
       }
 
       animationRef.current = requestAnimationFrame(draw);
@@ -256,7 +282,19 @@ export default React.forwardRef(function VideoPreview({
     <section className="rounded-lg border border-ink/10 bg-white p-5 shadow-soft dark:border-border dark:bg-surface dark:text-neutral-100 dark:shadow-soft-dk">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold">Lip-synced output</h2>
+          <h2 className="text-lg font-bold flex items-center gap-2">
+            Lip-synced output
+            <button
+              onClick={() => setBlurEnabled(!blurEnabled)}
+              className={`ml-2 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                blurEnabled 
+                  ? "bg-coral text-white" 
+                  : "bg-ink/10 text-ink/70 hover:bg-ink/20 dark:bg-border dark:text-muted dark:hover:bg-border/80"
+              }`}
+            >
+              {blurEnabled ? "Blur ON" : "Blur OFF"}
+            </button>
+          </h2>
           <p className="mt-1 text-sm text-ink/65 dark:text-muted">
             {modelStatus}
           </p>
@@ -292,10 +330,12 @@ export default React.forwardRef(function VideoPreview({
           controls
           src={audioUrl}
           autoPlay
-          onPlay={handlePlay}
-          onPause={handlePause}
-          onEnded={handleEnded}
-          onError={handleError}
+          onPlay={() => {
+            onSpeakingChange?.(true);
+          }}
+          onPause={() => onSpeakingChange?.(false)}
+          onEnded={() => onSpeakingChange?.(false)}
+          onError={() => onSpeakingChange?.(false)}
         >
           <track kind="captions" />
         </audio>

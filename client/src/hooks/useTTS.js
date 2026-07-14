@@ -1,69 +1,67 @@
-// Sends typed text to the local backend and returns playable cloned speech audio.
 import React from "react";
-import { getApiKey } from "../utils/apiKeyStorage.js";
 import { loadVoiceSettings } from "../utils/voiceSettings.js";
 
-function audioBufferToWav(buffer) {
-  const numOfChan = buffer.numberOfChannels;
-  const length = buffer.length * numOfChan * 2 + 44;
-  const bufferArr = new ArrayBuffer(length);
-  const view = new DataView(bufferArr);
-  const channels = [];
-  let i;
-  let sample;
-  let offset = 0;
-  let pos = 0;
-
-  // write WAV header
-  setUint32(0x46464952); // "RIFF"
-  setUint32(length - 8); // file length - 8
-  setUint32(0x45564157); // "WAVE"
-
-  setUint32(0x20746d66); // "fmt " chunk
-  setUint32(16); // chunk length
-  setUint16(1); // sample format (raw PCM)
-  setUint16(numOfChan); // channel count
-  setUint32(buffer.sampleRate); // sample rate
-  setUint32(buffer.sampleRate * 2 * numOfChan); // byte rate (sample rate * block align)
-  setUint16(numOfChan * 2); // block align (channel count * bytes per sample)
-  setUint16(16); // bits per sample
-
-  setUint32(0x61746164); // "data" chunk identifier
-  setUint32(length - pos - 4); // chunk length
-
-  for (i = 0; i < buffer.numberOfChannels; i++) {
-    channels.push(buffer.getChannelData(i));
-  }
-
-  while (pos < length) {
-    for (i = 0; i < numOfChan; i++) {
-      sample = Math.max(-1, Math.min(1, channels[i][offset]));
-      sample = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-      view.setInt16(pos, sample, true);
-      pos += 2;
-    }
-    offset++;
-  }
-
-  return new Blob([bufferArr], { type: "audio/wav" });
-
-  function setUint16(data) {
-    view.setUint16(pos, data, true);
-    pos += 2;
-  }
-
-  function setUint32(data) {
-    view.setUint32(pos, data, true);
-    pos += 4;
-  }
-}
-
+/**
+ * React hook that manages Text-to-Speech (TTS) generation state.
+ * Interfaces with the local VoiceForge backend for Chatterbox synthesis,
+ * and falls back to browser SpeechSynthesis if the server is offline or fails.
+ *
+ * @returns {object} The TTS state and the speak action function.
+ */
 export default function useTTS() {
   const [status, setStatus] = React.useState("idle");
   const [error, setError] = React.useState("");
   const [audioUrl, setAudioUrl] = React.useState("");
+  const [engine, setEngine] = React.useState("chatterbox");
+  const abortControllerRef = React.useRef(null);
 
-  async function speak({ text, voiceId, language_code}) {
+  /**
+   * Triggers local browser SpeechSynthesis as a fallback engine.
+   *
+   * @param {string} text The text to read.
+   * @param {string} languageCode BCP-47 language tag to use.
+   * @returns {Promise<void>} Resolves when speech completes.
+   */
+  function browserSpeak(text, languageCode) {
+    return new Promise((resolve, reject) => {
+      if (!("speechSynthesis" in window)) {
+        reject(new Error("Speech synthesis not supported"));
+        return;
+      }
+
+      window.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+
+      if (languageCode) {
+        utterance.lang = languageCode;
+      }
+
+      utterance.onend = resolve;
+      utterance.onerror = reject;
+
+      window.speechSynthesis.speak(utterance);
+    });
+  }
+
+  /**
+   * Generates cloned speech for the given text using the selected voice profile.
+   * Automatically attempts browser SpeechSynthesis fallback if the server request fails.
+   *
+   * @param {object} params Parameter payload.
+   * @param {string} params.text The text to synthesize.
+   * @param {string} params.voiceId The ID of the cloned voice profile.
+   * @param {string} [params.language_code] Chatterbox/BCP-47 language code.
+   * @returns {Promise<{audioUrl: string, engine: string}|{fallback: boolean, engine: string}>} Result of speech synthesis.
+   */
+  async function speak({ text, voiceId, language_code }) {
+    // Cancel any in-flight request before starting a new one.
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setError("");
     setStatus("speaking");
 
@@ -122,19 +120,18 @@ export default function useTTS() {
     try {
       const voiceSettings = loadVoiceSettings();
 
-      const apiKey = getApiKey();
       const response = await fetch("/api/voice/speak", {
         method: "POST",
+        signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
-          "X-ElevenLabs-Api-Key": apiKey,
         },
         body: JSON.stringify({
-  text,
-  voice_id: voiceId,
-  language_code,
-  voice_settings: voiceSettings
-})
+          text,
+          voice_id: voiceId,
+          language_code,
+          voice_settings: voiceSettings,
+        }),
       });
 
       if (!response.ok) {
@@ -144,15 +141,45 @@ export default function useTTS() {
 
       const payload = await response.json();
       const nextAudioUrl = payload.audioUrl;
+
+      setEngine("chatterbox");
       setAudioUrl(nextAudioUrl);
       setStatus("ready");
-      return { audioUrl: nextAudioUrl };
+
+      return {
+        audioUrl: nextAudioUrl,
+        engine: "chatterbox",
+      };
     } catch (ttsError) {
-      setError(ttsError?.message || String(ttsError));
-      setStatus("error");
-      throw ttsError;
+      // A cancelled request is not an error — a newer speak() call took over.
+      if (ttsError?.name === "AbortError") {
+        return;
+      }
+
+      try {
+        await browserSpeak(text, language_code);
+
+        setEngine("browser");
+        setAudioUrl("");
+        setStatus("ready");
+
+        return {
+          fallback: true,
+          engine: "browser",
+        };
+      } catch {
+        setError(ttsError?.message || String(ttsError));
+        setStatus("error");
+        throw ttsError;
+      }
     }
   }
 
-  return { speak, status, error, audioUrl };
+  return {
+    speak,
+    status,
+    error,
+    audioUrl,
+    engine,
+  };
 }
