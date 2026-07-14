@@ -36,6 +36,7 @@ export default function VoiceForge() {
     removeMessage,
     toggleFavorite,
     clearHistory,
+    importBackup,
   } = useSpeechHistory();
 
   const { toasts, showToast } = useToast();
@@ -50,11 +51,34 @@ export default function VoiceForge() {
     }
   });
 
-  useEffect(() => {
+  const handleAddToQuickReplies = useCallback((text) => {
     try {
-      localStorage.setItem("voiceforge:useClonedVoice", String(useClonedVoice));
-    } catch {}
-  }, [useClonedVoice]);
+      const saved = localStorage.getItem("vf_quick_replies");
+      let currentReplies = [];
+      if (saved) {
+        currentReplies = JSON.parse(saved);
+      }
+      if (currentReplies.some((r) => r.phrase.toLowerCase() === text.toLowerCase())) {
+        showToast("Already in Quick Replies", "error");
+        return;
+      }
+      const newReply = {
+        id: Math.random().toString(36).substr(2, 9),
+        label: text.length > 25 ? text.slice(0, 22) + "..." : text,
+        phrase: text,
+        category: "General",
+      };
+      const updated = [...currentReplies, newReply];
+      localStorage.setItem("vf_quick_replies", JSON.stringify(updated));
+      window.dispatchEvent(new Event("voiceforge:quickRepliesChanged"));
+      showToast("Added to Quick Replies", "success");
+    } catch (err) {
+      showToast("Failed to add to Quick Replies", "error");
+    }
+  }, [showToast]);
+
+  const speak = useCallback((text) => {
+    if (!text.trim()) return;
 
   useEffect(() => {
     async function loadActiveProfile() {
@@ -115,9 +139,9 @@ export default function VoiceForge() {
       return;
     }
     speak(text);
-    addMessage(text);
+    addMessage(text, language);
     showToast("Saved to history", "success");
-  }, [inputText, speak, addMessage, showToast]);
+  }, [inputText, speak, addMessage, showToast, language]);
 
   const handleReplay = useCallback((text) => {
     speak(text);
@@ -155,9 +179,9 @@ export default function VoiceForge() {
 
   const handleQuickReply = useCallback((phrase) => {
     speak(phrase);
-    addMessage(phrase);
+    addMessage(phrase, language);
     showToast("Quick reply sent", "success");
-  }, [speak, addMessage, showToast]);
+  }, [speak, addMessage, showToast, language]);
 
   const handleKeyDown = useCallback((event) => {
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
@@ -239,6 +263,8 @@ export default function VoiceForge() {
           onDelete={removeMessage}
           onClearHistory={clearHistory}
           onCopy={handleCopy}
+          onImportBackup={importBackup}
+          showToast={showToast}
         />
       </div>
 
