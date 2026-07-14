@@ -11,7 +11,11 @@ export default React.forwardRef(function VideoPreview({
   isSpeaking,
   onSpeakingChange,
   calibration = { xOffset: 0, yOffset: 0, scale: 1.0 },
-  isCalibrating = false
+  isCalibrating = false,
+  activeText = "",
+  subtitlesEnabled = true,
+  subtitleFontSize = "medium",
+  subtitleBgOpacity = 0.6
 }, ref) {
   const videoRef = React.useRef(null);
   const animationRef = React.useRef(null);
@@ -19,38 +23,115 @@ export default React.forwardRef(function VideoPreview({
   const audioProcessorRef = useRef(null);
   const faceProcessorRef = useRef(null);
   const ortSessionRef = useRef(null);
-  const ortRef = useRef(null);
-  const tempCanvasRef = useRef(null);
-  const isInferringRef = useRef(false);
-  const lastMouthCanvasRef = useRef(null);
-  const lastMouthCoordsRef = useRef(null);
   const waveRef = useRef(null);
-
-  if (!tempCanvasRef.current && typeof document !== "undefined") {
-    tempCanvasRef.current = document.createElement("canvas");
-    tempCanvasRef.current.width = 96;
-    tempCanvasRef.current.height = 96;
-  }
-
-  if (!lastMouthCanvasRef.current && typeof document !== "undefined") {
-    lastMouthCanvasRef.current = document.createElement("canvas");
-    lastMouthCanvasRef.current.width = 96;
-    lastMouthCanvasRef.current.height = 96;
-  }
-
-  useEffect(() => {
-    if (!isSpeaking) {
-      lastMouthCoordsRef.current = null;
-    }
-  }, [isSpeaking]);
-
   const [modelStatus, setModelStatus] = React.useState(
-    "Fallback animation ready",
+    "Audio-driven animation ready",
   );
   const { theme } = useTheme();
 
   const calibrationRef = React.useRef(calibration);
   const isCalibratingRef = React.useRef(isCalibrating);
+
+  const [blurEnabled, setBlurEnabled] = React.useState(false);
+  const segmenterRef = React.useRef(null);
+  const isSegmentingRef = React.useRef(false);
+  const maskCanvasRef = React.useRef(null);
+
+  const activeTextRef = React.useRef(activeText);
+  const subtitlesEnabledRef = React.useRef(subtitlesEnabled);
+  const subtitleFontSizeRef = React.useRef(subtitleFontSize);
+  const subtitleBgOpacityRef = React.useRef(subtitleBgOpacity);
+
+  React.useEffect(() => {
+    activeTextRef.current = activeText;
+  }, [activeText]);
+
+  React.useEffect(() => {
+    subtitlesEnabledRef.current = subtitlesEnabled;
+  }, [subtitlesEnabled]);
+
+  React.useEffect(() => {
+    subtitleFontSizeRef.current = subtitleFontSize;
+  }, [subtitleFontSize]);
+
+  React.useEffect(() => {
+    subtitleBgOpacityRef.current = subtitleBgOpacity;
+  }, [subtitleBgOpacity]);
+
+  React.useEffect(() => {
+    function handleStorage(event) {
+      if (
+        (event.key === "voiceforge:voiceSettings" || event.type === "voiceforge:settingsChanged") &&
+        audioProcessorRef.current
+      ) {
+        try {
+          const saved = JSON.parse(localStorage.getItem("voiceforge:voiceSettings")) || {};
+          const proc = audioProcessorRef.current;
+          if (typeof saved.dspBass === "number") proc.setBass(saved.dspBass);
+          if (typeof saved.dspMid === "number") proc.setMid(saved.dspMid);
+          if (typeof saved.dspTreble === "number") proc.setTreble(saved.dspTreble);
+          if (typeof saved.dspPitch === "number") proc.setPitch(saved.dspPitch);
+          if (typeof saved.dspSpeed === "number" && audioRef.current) {
+            proc.setSpeed(saved.dspSpeed, audioRef.current);
+          }
+        } catch (e) {
+          console.error("Error syncing audio settings:", e);
+        }
+      }
+    }
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("voiceforge:settingsChanged", handleStorage);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("voiceforge:settingsChanged", handleStorage);
+    };
+  }, []);
+
+  React.useEffect(() => {
+    async function initSegmenter() {
+      try {
+        const { SelfieSegmentation } = await import("@mediapipe/selfie_segmentation");
+        const segmenter = new SelfieSegmentation({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
+        });
+        segmenter.setOptions({
+          modelSelection: 1,
+        });
+        segmenter.onResults((results) => {
+          if (!maskCanvasRef.current) {
+            maskCanvasRef.current = document.createElement("canvas");
+          }
+          const mCanvas = maskCanvasRef.current;
+          mCanvas.width = results.image.width;
+          mCanvas.height = results.image.height;
+          const mCtx = mCanvas.getContext("2d");
+          
+          mCtx.save();
+          mCtx.clearRect(0, 0, mCanvas.width, mCanvas.height);
+          
+          mCtx.drawImage(results.segmentationMask, 0, 0, mCanvas.width, mCanvas.height);
+          
+          mCtx.globalCompositeOperation = "source-in";
+          mCtx.drawImage(results.image, 0, 0, mCanvas.width, mCanvas.height);
+          
+          mCtx.globalCompositeOperation = "destination-over";
+          mCtx.filter = "blur(12px)";
+          mCtx.drawImage(results.image, 0, 0, mCanvas.width, mCanvas.height);
+          
+          mCtx.restore();
+          
+          isSegmentingRef.current = false;
+        });
+        
+        // Pre-initialize
+        await segmenter.initialize();
+        segmenterRef.current = segmenter;
+      } catch (err) {
+        console.error("Failed to load MediaPipe segmenter", err);
+      }
+    }
+    initSegmenter();
+  }, []);
 
   React.useEffect(() => {
     calibrationRef.current = calibration;
@@ -98,8 +179,9 @@ export default React.forwardRef(function VideoPreview({
         setModelStatus("ONNX Wav2Lip model loaded");
       } catch (err) {
         console.warn("Wav2Lip initialization skipped:", err.message);
-        setModelStatus("Fallback mouth animation active");
-        // TODO: Replace fallback canvas mouth animation with real browser Wav2Lip ONNX inference.
+        setModelStatus("Audio-driven animation active");
+        audioProcessorRef.current = new AudioProcessor();
+        // TODO: Replace audio-driven mouth animation with real browser Wav2Lip ONNX inference.
       }
     }
     loadModel();
@@ -134,13 +216,98 @@ export default React.forwardRef(function VideoPreview({
     const textColor = isDark ? "#e2e8f0" : "#16201d";
     const mouthColor = isDark ? "rgba(226, 232, 240, 0.82)" : "rgba(22, 32, 29, 0.82)";
 
+    let lastSyncTime = 0;
+    let audioTimeOffset = null;
+
+    function drawSubtitles(ctx, text, fontSettings, bgOpacity) {
+      if (!text) return;
+      
+      const canvasWidth = ctx.canvas.width;
+      const canvasHeight = ctx.canvas.height;
+      
+      let fontSize = 24;
+      if (fontSettings === "small") fontSize = 18;
+      if (fontSettings === "large") fontSize = 32;
+      
+      ctx.save();
+      ctx.font = `600 ${fontSize}px Inter, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      
+      const maxTextWidth = canvasWidth * 0.8;
+      const words = text.split(" ");
+      const lines = [];
+      let currentLine = "";
+      
+      for (let n = 0; n < words.length; n++) {
+        const testLine = currentLine + words[n] + " ";
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > maxTextWidth && n > 0) {
+          lines.push(currentLine.trim());
+          currentLine = words[n] + " ";
+        } else {
+          currentLine = testLine;
+        }
+      }
+      lines.push(currentLine.trim());
+      
+      const lineHeight = fontSize * 1.35;
+      const totalHeight = lines.length * lineHeight;
+      const paddingX = 24;
+      const paddingY = 14;
+      
+      const boxWidth = Math.min(canvasWidth * 0.9, maxTextWidth + paddingX * 2);
+      const boxHeight = totalHeight + paddingY * 2;
+      
+      const boxX = (canvasWidth - boxWidth) / 2;
+      const boxY = canvasHeight * 0.82 - boxHeight / 2;
+      
+      if (bgOpacity > 0) {
+        ctx.fillStyle = `rgba(0, 0, 0, ${bgOpacity})`;
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 8);
+        } else {
+          ctx.rect(boxX, boxY, boxWidth, boxHeight);
+        }
+        ctx.fill();
+      }
+      
+      ctx.fillStyle = "#ffffff";
+      ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
+      ctx.shadowBlur = 4;
+      
+      lines.forEach((line, index) => {
+        const lineY = boxY + paddingY + (index + 0.5) * lineHeight;
+        ctx.fillText(line, canvasWidth / 2, lineY);
+      });
+      
+      ctx.restore();
+    }
+
     function draw(timestamp) {
       context.fillStyle = bgColor;
       context.fillRect(0, 0, canvas.width, canvas.height);
 
       const video = videoRef.current;
       if (video?.readyState >= 2) {
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        if (blurEnabled && segmenterRef.current) {
+          if (!isSegmentingRef.current) {
+            isSegmentingRef.current = true;
+            segmenterRef.current.send({ image: video }).catch((err) => {
+              console.error(err);
+              isSegmentingRef.current = false;
+            });
+          }
+          if (maskCanvasRef.current) {
+            context.drawImage(maskCanvasRef.current, 0, 0, canvas.width, canvas.height);
+          } else {
+            // Draw video normally if first frame is not ready
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+          }
+        } else {
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        }
       } else {
         context.fillStyle = textColor;
         context.font = "600 24px Inter, sans-serif";
@@ -158,76 +325,51 @@ export default React.forwardRef(function VideoPreview({
         const useONNX = isSpeaking && ortSessionRef.current && audioProcessorRef.current && faceProcessorRef.current && ortRef.current;
 
         // Try ONNX Inference first
-        if (useONNX) {
-          inferenceSucceeded = true; // Prevent falling back to ellipse while model runs
-          if (!isInferringRef.current) {
-            isInferringRef.current = true;
-            (async () => {
-              try {
-                const melFeatures = audioProcessorRef.current.getLatestFeatures();
-                const landmarks = faceProcessorRef.current.detectFace(video, timestamp);
-                if (melFeatures && landmarks) {
-                  const detection = faceProcessorRef.current.cropMouthRegion(canvas, landmarks, tempCanvasRef.current);
-                  if (detection) {
-                    const ort = ortRef.current;
-                    const audioTensor = new ort.Tensor('float32', melFeatures, [1, 1, 80, 16]);
-                    
-                    const floatData = new Float32Array(1 * 3 * 96 * 96);
-                    const imgData = detection.imageData.data;
-                    for (let i = 0; i < 96 * 96; i++) {
-                      floatData[i] = imgData[i * 4] / 255.0;
-                      floatData[96 * 96 + i] = imgData[i * 4 + 1] / 255.0;
-                      floatData[2 * 96 * 96 + i] = imgData[i * 4 + 2] / 255.0;
-                    }
-                    const videoTensor = new ort.Tensor('float32', floatData, [1, 3, 96, 96]);
-
-                    const results = await ortSessionRef.current.run({ audio: audioTensor, video: videoTensor });
-                    const outputName = ortSessionRef.current.outputNames[0];
-                    const outputTensor = results[outputName];
-                    const outputData = outputTensor.data;
-
-                    const tempCanvas = tempCanvasRef.current;
-                    const tempCtx = tempCanvas.getContext('2d');
-                    const outputImageData = tempCtx.createImageData(96, 96);
-                    const outData = outputImageData.data;
-                    for (let i = 0; i < 96 * 96; i++) {
-                      const r = Math.min(255, Math.max(0, Math.round(outputData[i] * 255.0)));
-                      const g = Math.min(255, Math.max(0, Math.round(outputData[96 * 96 + i] * 255.0)));
-                      const b = Math.min(255, Math.max(0, Math.round(outputData[2 * 96 * 96 + i] * 255.0)));
-                      outData[i * 4] = r;
-                      outData[i * 4 + 1] = g;
-                      outData[i * 4 + 2] = b;
-                      outData[i * 4 + 3] = 255;
-                    }
-                    tempCtx.putImageData(outputImageData, 0, 0);
-
-                    // Cache generated mouth and coordinates
-                    const lastMouthCanvas = lastMouthCanvasRef.current;
-                    const lastCtx = lastMouthCanvas.getContext('2d');
-                    lastCtx.drawImage(tempCanvas, 0, 0);
-                    lastMouthCoordsRef.current = detection.coords;
-                  }
+        if (isSpeaking && ortSessionRef.current && audioProcessorRef.current && faceProcessorRef.current) {
+          try {
+             // 1. Get Audio Features
+             const melFeatures = audioProcessorRef.current.getLatestFeatures();
+             
+             // 2. Synchronize visual timestamp to the audio master clock to prevent drift
+             let syncTimestamp = timestamp;
+             const audioTime = audioProcessorRef.current.getAudioTime() * 1000;
+             if (audioTime > 0) {
+                if (audioTimeOffset === null) {
+                   audioTimeOffset = timestamp - audioTime;
                 }
-              } catch (e) {
-                console.error("Inference loop error:", e);
-              } finally {
-                isInferringRef.current = false;
-              }
-            })();
-          }
+                const targetSyncTime = audioTime + audioTimeOffset;
+                // MediaPipe requires strictly increasing timestamps
+                syncTimestamp = targetSyncTime <= lastSyncTime ? lastSyncTime + 1 : targetSyncTime;
+                lastSyncTime = syncTimestamp;
+             }
 
-          // Draw the cached mouth frame if available
-          if (lastMouthCoordsRef.current) {
-            const { x, y, w, h } = lastMouthCoordsRef.current;
-            context.drawImage(lastMouthCanvasRef.current, x, y, w, h);
-          } else {
-            // If not yet cached, temporarily use ellipse
-            inferenceSucceeded = false;
+             // 3. Get Face Crop
+             const landmarks = faceProcessorRef.current.detectFace(video, syncTimestamp);
+             
+             if (melFeatures && landmarks) {
+               // TODO: Construct Tensors and run inference when real model is available
+               // const audioTensor = new ort.Tensor('float32', melFeatures, [1, 1, 80, 16]);
+               // const videoCrop = faceProcessorRef.current.cropMouthRegion(canvas, landmarks, tempCanvas);
+               // const videoTensor = ... convert videoCrop to tensor ...
+               // const results = await ortSessionRef.current.run({ audio: audioTensor, video: videoTensor });
+               // ... draw results back to canvas ...
+               
+               // inferenceSucceeded = true;
+             }
+          } catch (e) {
+             console.error("Inference loop error:", e);
           }
         }
 
         if (!inferenceSucceeded) {
-          const mouthOpen = isSpeaking ? 14 + Math.sin(timestamp / 80) * 8 : 14;
+          let mouthOpen = 14;
+          if (isSpeaking && audioProcessorRef.current) {
+            const vol = audioProcessorRef.current.getVolume();
+            // Scale RMS volume (usually 0 to 0.3) to mouth height.
+            // vol * 150 provides a responsive map to pixels, capped at 30 extra pixels.
+            const extraOpen = Math.min(30, vol * 150);
+            mouthOpen = 14 + extraOpen;
+          }
           const currentCalibration = calibrationRef.current || {};
           const xOffset = typeof currentCalibration.xOffset === "number" && !isNaN(currentCalibration.xOffset)
             ? Math.max(-400, Math.min(400, currentCalibration.xOffset))
@@ -239,10 +381,10 @@ export default React.forwardRef(function VideoPreview({
             ? Math.max(0.5, Math.min(2.5, currentCalibration.scale))
             : 1.0;
 
-          const centerX = canvas.width / 2 + xOffset;
-          const centerY = canvas.height * 0.63 + yOffset;
-          const radiusX = 56 * scale;
-          const radiusY = mouthOpen * scale;
+          const centerX = Math.max(0, Math.min(canvas.width, canvas.width / 2 + xOffset));
+          const centerY = Math.max(0, Math.min(canvas.height, canvas.height * 0.63 + yOffset));
+          const radiusX = Math.max(0.01, 56 * scale);
+          const radiusY = Math.max(0.01, mouthOpen * scale);
 
           context.save();
           context.fillStyle = mouthColor;
@@ -251,6 +393,15 @@ export default React.forwardRef(function VideoPreview({
           context.fill();
           context.restore();
         }
+      }
+
+      if (isSpeaking && subtitlesEnabledRef.current) {
+        drawSubtitles(
+          context,
+          activeTextRef.current,
+          subtitleFontSizeRef.current,
+          subtitleBgOpacityRef.current
+        );
       }
 
       if (waveRef.current && audioProcessorRef.current) {
@@ -274,7 +425,19 @@ export default React.forwardRef(function VideoPreview({
     <section className="rounded-lg border border-ink/10 bg-white p-5 shadow-soft dark:border-border dark:bg-surface dark:text-neutral-100 dark:shadow-soft-dk">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold">Lip-synced output</h2>
+          <h2 className="text-lg font-bold flex items-center gap-2">
+            Lip-synced output
+            <button
+              onClick={() => setBlurEnabled(!blurEnabled)}
+              className={`ml-2 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                blurEnabled 
+                  ? "bg-coral text-white" 
+                  : "bg-ink/10 text-ink/70 hover:bg-ink/20 dark:bg-border dark:text-muted dark:hover:bg-border/80"
+              }`}
+            >
+              {blurEnabled ? "Blur ON" : "Blur OFF"}
+            </button>
+          </h2>
           <p className="mt-1 text-sm text-ink/65 dark:text-muted">
             {modelStatus}
           </p>

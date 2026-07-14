@@ -1,4 +1,5 @@
 import Meyda from "meyda";
+import { PitchShifter } from "./pitchShifter.js";
 
 /**
  * Extracts Mel-spectrogram features from an HTMLMediaElement using the Web Audio API.
@@ -11,7 +12,11 @@ export class AudioProcessor {
     this.analyzer = null;
     this.analyser = null; // AnalyserNode for audio visualization
     this.currentMelSpectrogram = null;
-    this.melHistory = [];
+    this.currentVolume = 0;
+    this.bassFilter = null;
+    this.midFilter = null;
+    this.trebleFilter = null;
+    this.pitchShifter = null;
   }
 
   /**
@@ -28,34 +33,31 @@ export class AudioProcessor {
       await this.audioContext.resume();
     }
 
-    // Prevent re-creating the source node if it already exists for this element
-    if (!audioElement.dataset.sourceCreated) {
-      this.source = this.audioContext.createMediaElementSource(audioElement);
-      audioElement.dataset.sourceCreated = "true";
-    }
-
-    // Clean up old analyser node and connections
-    if (this.analyser) {
-      try {
-        this.source.disconnect(this.analyser);
-      } catch (e) {}
-      this.analyser.disconnect();
-    }
-
-    this.analyser = this.audioContext.createAnalyser();
-    this.analyser.fftSize = 32; // Yields 16 frequency bands
-
-    // Clean up old direct connections to destination
-    try {
-      this.source.disconnect(this.audioContext.destination);
-    } catch (e) {}
-
-    // Route connections
-    this.source.connect(this.audioContext.destination); // For listening
-    this.source.connect(this.analyser); // For visualization
-
     if (this.analyzer) {
       this.analyzer.stop();
+      this.analyzer = null;
+    }
+
+    // Clean up previous source node connection to prevent memory leak
+    if (this.source) {
+      this.source.disconnect();
+      this.source = null;
+    }
+
+    // Prevent re-creating the source node if it already exists for this element.
+    // We map the node to the element's lifecycle using a direct property.
+    if (audioElement._audioSourceNode) {
+      this.source = audioElement._audioSourceNode;
+      try {
+        this.source.connect(this.audioContext.destination);
+      } catch (e) {
+        // Safe fallback if already connected
+      }
+    } else {
+      this.source = this.audioContext.createMediaElementSource(audioElement);
+      // Connect to destination so we can still hear it
+      this.source.connect(this.audioContext.destination);
+      audioElement._audioSourceNode = this.source;
     }
 
     // Reset history when initialized/re-initialized
@@ -66,14 +68,14 @@ export class AudioProcessor {
       audioContext: this.audioContext,
       source: this.source,
       bufferSize: 512, // Must be a power of 2
-      numberOfMelBands: 80,
-      featureExtractors: ["melSpectrogram"],
+      featureExtractors: ["melSpectrogram", "rms"],
       callback: (features) => {
-        if (features && features.melSpectrogram) {
-          this.currentMelSpectrogram = features.melSpectrogram;
-          this.melHistory.push(new Float32Array(features.melSpectrogram));
-          if (this.melHistory.length > 16) {
-            this.melHistory.shift();
+        if (features) {
+          if (features.melSpectrogram) {
+            this.currentMelSpectrogram = features.melSpectrogram;
+          }
+          if (features.rms !== undefined) {
+            this.currentVolume = features.rms;
           }
         }
       },
@@ -103,9 +105,9 @@ export class AudioProcessor {
   }
 
   /**
-   * Returns the most recently extracted mel-spectrogram sliding window history.
-   * Format expected by Wav2Lip ONNX is [1, 1, 80, 16] (planar array).
-   * @returns {Float32Array}
+   * Returns the most recently extracted mel-spectrogram.
+   * Format expected by Wav2Lip ONNX is usually [batch_size, 1, 80, 16] (example).
+   * @returns {Float32Array|null}
    */
   getLatestFeatures() {
     const history = this.melHistory || [];
@@ -128,6 +130,22 @@ export class AudioProcessor {
   }
 
   /**
+   * Returns the current RMS volume to drive fallback mouth animation.
+   * @returns {number}
+   */
+  getVolume() {
+    return this.currentVolume || 0;
+  }
+
+  /**
+   * Returns the current time from the audio context for exact A/V synchronization.
+   * @returns {number}
+   */
+  getAudioTime() {
+    return this.audioContext ? this.audioContext.currentTime : 0;
+  }
+
+  /**
    * Cleans up audio context and analyzer.
    */
   dispose() {
@@ -135,14 +153,44 @@ export class AudioProcessor {
       this.analyzer.stop();
       this.analyzer = null;
     }
-    if (this.analyser) {
-      this.analyser.disconnect();
-      this.analyser = null;
+    if (this.source) {
+      this.source.disconnect();
+      this.source = null;
     }
     if (this.audioContext && this.audioContext.state !== "closed") {
       this.audioContext.close();
       this.audioContext = null;
     }
     this.melHistory = [];
+  }
+
+  setBass(gain) {
+    if (this.bassFilter) {
+      this.bassFilter.gain.value = gain;
+    }
+  }
+
+  setMid(gain) {
+    if (this.midFilter) {
+      this.midFilter.gain.value = gain;
+    }
+  }
+
+  setTreble(gain) {
+    if (this.trebleFilter) {
+      this.trebleFilter.gain.value = gain;
+    }
+  }
+
+  setPitch(pitch) {
+    if (this.pitchShifter) {
+      this.pitchShifter.setPitch(pitch);
+    }
+  }
+
+  setSpeed(speed, audioElement) {
+    if (audioElement) {
+      audioElement.playbackRate = speed;
+    }
   }
 }
