@@ -1,6 +1,6 @@
 import React from "react";
 import { loadVoiceSettings } from "../utils/voiceSettings.js";
-import { getProfile } from "../utils/db.js";
+import { getSavedProfiles, saveVoiceProfile } from "./useVoiceClone.js";
 
 /**
  * React hook that manages Text-to-Speech (TTS) generation state.
@@ -46,6 +46,21 @@ export default function useTTS() {
   }
 
   /**
+   * Resolves the owner_token that authorizes use of a given voice_id, by
+   * looking up the locally saved voice profile that matches voiceId.
+   *
+   * @param {string} voiceId The voice_id to resolve an owner_token for.
+   * @returns {Promise<object|null>} The matching saved profile, or null.
+   */
+  async function findProfileByVoiceId(voiceId) {
+    if (!voiceId) {
+      return null;
+    }
+    const profiles = await getSavedProfiles();
+    return profiles.find((profile) => profile.voice_id === voiceId) || null;
+  }
+
+  /**
    * Generates cloned speech for the given text using the selected voice profile.
    * Automatically attempts browser SpeechSynthesis fallback if the server request fails.
    *
@@ -53,9 +68,11 @@ export default function useTTS() {
    * @param {string} params.text The text to synthesize.
    * @param {string} params.voiceId The ID of the cloned voice profile.
    * @param {string} [params.language_code] Chatterbox/BCP-47 language code.
+   * @param {string} [params.ownerToken] Owner token for voiceId. If omitted,
+   *   it is looked up from the locally saved profile matching voiceId.
    * @returns {Promise<{audioUrl: string, engine: string}|{fallback: boolean, engine: string}>} Result of speech synthesis.
    */
-  async function speak({ text, voiceId, language_code }) {
+  async function speak({ text, voiceId, language_code, ownerToken }) {
     // Cancel any in-flight request before starting a new one.
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -66,60 +83,14 @@ export default function useTTS() {
     setError("");
     setStatus("speaking");
 
-    const apiKey = getApiKey();
-    if (!apiKey || apiKey === "mock") {
-      try {
-        // Generate a synthesized beep/melody to mock speech audio locally
-        const duration = Math.max(1.0, Math.min(8.0, text.length * 0.06));
-        const offlineCtx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 44100 * duration, 44100);
-        
-        const osc = offlineCtx.createOscillator();
-        const gain = offlineCtx.createGain();
-        
-        osc.type = "sine";
-        
-        // Pitch modulation simulating speaking sweeps
-        osc.frequency.setValueAtTime(180, 0);
-        for (let t = 0.1; t < duration; t += 0.2) {
-          const freq = 150 + Math.sin(t * 10) * 80 + Math.random() * 20;
-          osc.frequency.linearRampToValueAtTime(freq, t);
-        }
-        
-        // Amplitude modulation simulating word and syllable boundaries
-        gain.gain.setValueAtTime(0, 0);
-        let isPeak = true;
-        for (let t = 0.05; t < duration - 0.05; t += 0.15) {
-          const vol = isPeak ? (0.4 + Math.random() * 0.4) : 0.02;
-          gain.gain.linearRampToValueAtTime(vol, t);
-          isPeak = !isPeak;
-        }
-        gain.gain.linearRampToValueAtTime(0, duration);
-
-        osc.connect(gain);
-        gain.connect(offlineCtx.destination);
-        
-        osc.start(0);
-        osc.stop(duration);
-
-        const renderedBuffer = await offlineCtx.startRendering();
-        const wavBlob = audioBufferToWav(renderedBuffer);
-        const nextAudioUrl = URL.createObjectURL(wavBlob);
-
-        setAudioUrl((previous) => {
-          if (previous) URL.revokeObjectURL(previous);
-          return nextAudioUrl;
-        });
-        setStatus("ready");
-        return { audioUrl: nextAudioUrl };
-      } catch (err) {
-        setError(err.message || "Local mock speech synthesis failed.");
-        setStatus("error");
-        throw err;
-      }
-    }
-
     try {
       const voiceSettings = loadVoiceSettings();
+
+      // Fix (Broken Voice Synthesis): the server now requires owner_token to
+      // authorize use of voice_id (403 otherwise). Use the explicitly
+      // passed token if given, else resolve it from the saved profile.
+      let activeVoiceId = voiceId;
+      let resolvedOwnerToken = ownerToken || (await findProfileByVoiceId(voiceId))?.ownerToken || null;
 
       let response = await fetch("/api/voice/speak", {
         method: "POST",
@@ -129,7 +100,8 @@ export default function useTTS() {
         },
         body: JSON.stringify({
           text,
-          voice_id: voiceId,
+          voice_id: activeVoiceId,
+          owner_token: resolvedOwnerToken,
           language_code,
           voice_settings: voiceSettings,
         }),
@@ -173,12 +145,11 @@ export default function useTTS() {
         const payload = await response.json().catch(() => ({}));
         // If voice profile is missing on the backend (404), trigger auto-reclone from IndexedDB
         if (response.status === 404 && (payload.error || "").includes("Voice profile not found")) {
-          const profile = await getProfile(voiceId).catch(() => null);
+          const profile = await findProfileByVoiceId(voiceId);
           if (profile && profile.audioBlob) {
             const formData = new FormData();
             formData.append("audio", profile.audioBlob, "voiceforge-reference.webm");
             formData.append("name", profile.name);
-            formData.append("voice_id", voiceId);
 
             const cloneResponse = await fetch("/api/voice/clone", {
               method: "POST",
@@ -186,6 +157,27 @@ export default function useTTS() {
             });
 
             if (cloneResponse.ok) {
+              const clonePayload = await cloneResponse.json();
+
+              // Fix (Broken Voice Synthesis): cloneVoice() always mints a
+              // brand-new voice_id/owner_token pair server-side — it does
+              // NOT reuse the old voice_id, even if we sent one. Retrying
+              // with the stale voiceId/resolvedOwnerToken here would just
+              // 403/404 again. Persist the new pair locally (this also
+              // updates the active-voice pointer) and use the new pair for
+              // the retry below.
+              const updatedProfile = await saveVoiceProfile(
+                {
+                  voice_id: clonePayload.voice_id,
+                  owner_token: clonePayload.owner_token,
+                  name: clonePayload.name || profile.name,
+                },
+                profile.audioBlob
+              );
+
+              activeVoiceId = updatedProfile.voice_id;
+              resolvedOwnerToken = updatedProfile.ownerToken;
+
               // Retry the speak request after silent re-cloning succeeds
               response = await fetch("/api/voice/speak", {
                 method: "POST",
@@ -194,7 +186,8 @@ export default function useTTS() {
                 },
                 body: JSON.stringify({
                   text,
-                  voice_id: voiceId,
+                  voice_id: activeVoiceId,
+                  owner_token: resolvedOwnerToken,
                   language_code,
                   voice_settings: voiceSettings,
                 }),
