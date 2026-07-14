@@ -1,5 +1,6 @@
 import React from "react";
 import { loadVoiceSettings } from "../utils/voiceSettings.js";
+import { getSavedProfiles } from "./useVoiceClone.js";
 
 /**
  * React hook that manages Text-to-Speech (TTS) generation state.
@@ -45,6 +46,23 @@ export default function useTTS() {
   }
 
   /**
+   * Resolves the owner_token that authorizes use of a given voice_id.
+   * Looks up the locally saved voice profile that matches voiceId, since
+   * the server now requires proof of ownership per voice_id on /speak.
+   *
+   * @param {string} voiceId The voice_id to resolve an owner_token for.
+   * @returns {Promise<string|null>} The owner_token, or null if not found.
+   */
+  async function resolveOwnerToken(voiceId) {
+    if (!voiceId) {
+      return null;
+    }
+    const profiles = await getSavedProfiles();
+    const matchingProfile = profiles.find((profile) => profile.voice_id === voiceId);
+    return matchingProfile?.ownerToken || null;
+  }
+
+  /**
    * Generates cloned speech for the given text using the selected voice profile.
    * Automatically attempts browser SpeechSynthesis fallback if the server request fails.
    *
@@ -52,9 +70,11 @@ export default function useTTS() {
    * @param {string} params.text The text to synthesize.
    * @param {string} params.voiceId The ID of the cloned voice profile.
    * @param {string} [params.language_code] Chatterbox/BCP-47 language code.
+   * @param {string} [params.ownerToken] Owner token for voiceId. If omitted,
+   *   it is looked up from the locally saved profile matching voiceId.
    * @returns {Promise<{audioUrl: string, engine: string}|{fallback: boolean, engine: string}>} Result of speech synthesis.
    */
-  async function speak({ text, voiceId, language_code }) {
+  async function speak({ text, voiceId, language_code, ownerToken }) {
     // Cancel any in-flight request before starting a new one.
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -68,6 +88,11 @@ export default function useTTS() {
     try {
       const voiceSettings = loadVoiceSettings();
 
+      // Fix (Broken Voice Synthesis): the server now requires owner_token to
+      // authorize use of voice_id (403 otherwise). Use the explicitly
+      // passed token if given, else resolve it from the saved profile.
+      const resolvedOwnerToken = ownerToken || (await resolveOwnerToken(voiceId));
+
       const response = await fetch("/api/voice/speak", {
         method: "POST",
         signal: controller.signal,
@@ -77,6 +102,7 @@ export default function useTTS() {
         body: JSON.stringify({
           text,
           voice_id: voiceId,
+          owner_token: resolvedOwnerToken,
           language_code,
           voice_settings: voiceSettings,
         }),
