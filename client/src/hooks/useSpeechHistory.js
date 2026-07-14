@@ -9,7 +9,9 @@ import { useState, useEffect, useCallback } from "react";
 const HISTORY_KEY = "vf_history";
 const FAVS_KEY = "vf_favorites";
 const TRANSCRIPT_KEY = "vf_transcript";
+const ANALYTICS_KEY = "vf_analytics_history";
 const MAX_HISTORY = 25;
+const MAX_ANALYTICS = 2000;
 
 /**
  * Safely reads a JSON value from localStorage.
@@ -86,6 +88,7 @@ export function useSpeechHistory() {
     () => new Set(readStorage(FAVS_KEY, []))
   );
   const [sessionTranscript, setSessionTranscript] = useState(() => readSessionStorage(TRANSCRIPT_KEY, []));
+  const [analyticsHistory, setAnalyticsHistory] = useState(() => readStorage(ANALYTICS_KEY, []));
 
   // ── Persistence ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -112,6 +115,14 @@ export function useSpeechHistory() {
     }
   }, [favorites]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(ANALYTICS_KEY, JSON.stringify(analyticsHistory));
+    } catch {
+      /* storage quota exceeded — silently skip */
+    }
+  }, [analyticsHistory]);
+
   // ── Actions ──────────────────────────────────────────────────────────────
 
   /**
@@ -124,9 +135,10 @@ export function useSpeechHistory() {
  * - moves duplicate entries to top
  * - enforces MAX_HISTORY limit
  *
- * @param {string} text - Message text to store
- */
-const addMessage = useCallback((text) => {
+   * @param {string} text - Message text to store
+   * @param {string} lang - Language code
+   */
+const addMessage = useCallback((text, lang = "en-US") => {
   const trimmed = text.trim();
 
   if (!trimmed) return;
@@ -134,13 +146,20 @@ const addMessage = useCallback((text) => {
   const timestamp = Date.now();
 
   setSessionTranscript((prev) => [
-    ...prev,
-    {
-      text: trimmed,
-      timestamp,
-      status: "success",
-    },
-  ]);
+  ...prev,
+  {
+    text: trimmed,
+    timestamp,
+    status: "success",
+    language: lang,
+  },
+]);
+
+  setAnalyticsHistory((prev) => {
+    const newEntry = { id: crypto.randomUUID(), text: trimmed, timestamp, language: lang };
+    const updated = [newEntry, ...prev];
+    return updated.slice(0, MAX_ANALYTICS);
+  });
 
   setHistory((prev) => {
     // Check existing message
@@ -192,50 +211,64 @@ const addMessage = useCallback((text) => {
     setHistory([]);
     setFavorites(new Set());
     setSessionTranscript([]);
+    setAnalyticsHistory([]);
   }, []);
 
   /**
-   * Adds a tag to a message.
+   * Imports a history and favorites backup.
+   * Merges imported items with the existing setup, preventing text duplicates
+   * and updating favorite relationships.
    */
-  const addTagToMessage = useCallback((id, tag) => {
-    const cleanTag = tag.trim().toLowerCase();
-    if (!cleanTag) return;
-    setHistory((prev) =>
-      prev.map((m) => {
-        if (m.id === id) {
-          const currentTags = m.tags || [];
-          if (!currentTags.includes(cleanTag)) {
-            return { ...m, tags: [...currentTags, cleanTag] };
-          }
-        }
-        return m;
-      })
-    );
-  }, []);
+  const importBackup = useCallback((importedHistory, importedFavorites) => {
+    const mergedMap = new Map();
+    // Add existing history
+    history.forEach(m => mergedMap.set(m.text, m));
 
-  /**
-   * Removes a tag from a message.
-   */
-  const removeTagFromMessage = useCallback((id, tag) => {
-    setHistory((prev) =>
-      prev.map((m) => {
-        if (m.id === id) {
-          return { ...m, tags: (m.tags || []).filter((t) => t !== tag) };
+    const favIdsToAdd = [];
+    importedHistory.forEach((impMsg) => {
+      const isImportedFav = importedFavorites.includes(impMsg.id);
+      if (mergedMap.has(impMsg.text)) {
+        const existingMsg = mergedMap.get(impMsg.text);
+        if (isImportedFav) {
+          favIdsToAdd.push(existingMsg.id);
         }
-        return m;
-      })
-    );
-  }, []);
+      } else {
+        mergedMap.set(impMsg.text, impMsg);
+        if (isImportedFav) {
+          favIdsToAdd.push(impMsg.id);
+        }
+      }
+    });
+
+    const mergedList = Array.from(mergedMap.values());
+    mergedList.sort((a, b) => b.timestamp - a.timestamp);
+    const finalHistory = mergedList.slice(0, MAX_HISTORY);
+
+    const nextFavorites = new Set(favorites);
+    favIdsToAdd.forEach(id => nextFavorites.add(id));
+
+    // Clean up favorites: only keep favorites whose IDs are in the finalHistory
+    const finalHistoryIds = new Set(finalHistory.map(m => m.id));
+    const cleanedFavorites = new Set();
+    nextFavorites.forEach(id => {
+      if (finalHistoryIds.has(id)) {
+        cleanedFavorites.add(id);
+      }
+    });
+
+    setHistory(finalHistory);
+    setFavorites(cleanedFavorites);
+  }, [history, favorites]);
 
   return {
     history,
     favorites,
     sessionTranscript,
+    analyticsHistory,
     addMessage,
     removeMessage,
     toggleFavorite,
     clearHistory,
-    addTagToMessage,
-    removeTagFromMessage,
+    importBackup,
   };
 }
