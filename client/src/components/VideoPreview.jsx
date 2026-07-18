@@ -436,9 +436,8 @@ export default React.forwardRef(function VideoPreview({
 
     return () => {
       isUnmounted = true;
-      const vid = videoRef.current;
-      if (vid && typeof vid.cancelVideoFrameCallback === "function" && animationRef.current) {
-        vid.cancelVideoFrameCallback(animationRef.current);
+      if (video && typeof video.cancelVideoFrameCallback === "function" && animationRef.current) {
+        video.cancelVideoFrameCallback(animationRef.current);
       }
       if (fallbackTimer) cancelAnimationFrame(fallbackTimer);
     };
