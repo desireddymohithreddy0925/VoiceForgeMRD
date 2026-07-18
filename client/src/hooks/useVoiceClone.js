@@ -1,6 +1,6 @@
 // Provides a small client-side API for uploading a recording and saving cloned voice profiles.
 import React from "react";
-import { getAllProfiles, saveProfile, deleteProfile } from "../utils/db.js";
+import { getAllProfiles, saveProfile, deleteProfile, clearStorage } from "../utils/db.js";
 
 // Fix (Issue 2): must match the server-side Multer limit in server/middleware/upload.js.
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024; // 12 MB
@@ -17,11 +17,18 @@ export async function saveVoiceProfile(profile, audioBlob = null) {
     id: profile.voice_id,
     voice_id: profile.voice_id,
     name: profile.name || `Voice ${profiles.length + 1}`,
+    // Fix (Broken Voice Synthesis): persist the owner_token returned by
+    // POST /api/voice/clone alongside the profile. The server now requires
+    // this token on /api/voice/speak to prove ownership of voice_id, so it
+    // must be retrievable later from the saved profile, not just held in
+    // memory during the clone flow.
+    ownerToken: profile.ownerToken || profile.owner_token || null,
     createdAt: new Date().toISOString(),
     audioBlob // Store the binary reference audio Blob
   };
   await saveProfile(nextProfile);
   localStorage.setItem(ACTIVE_KEY, nextProfile.voice_id);
+  window.dispatchEvent(new CustomEvent("voiceforge:profileChanged"));
   return nextProfile;
 }
 
@@ -31,7 +38,15 @@ export async function deleteVoiceProfile(voiceId) {
   if (localStorage.getItem(ACTIVE_KEY) === voiceId) {
     localStorage.setItem(ACTIVE_KEY, nextProfiles[0]?.voice_id || "");
   }
+  window.dispatchEvent(new CustomEvent("voiceforge:profileChanged"));
   return nextProfiles;
+}
+
+export async function clearAllVoiceProfiles() {
+  await clearStorage();
+  localStorage.setItem(ACTIVE_KEY, "");
+  window.dispatchEvent(new CustomEvent("voiceforge:profileChanged"));
+  return [];
 }
 
 export async function getActiveVoiceProfile() {
@@ -87,8 +102,12 @@ export default function useVoiceClone() {
         throw new Error(payload.error || "Voice cloning failed.");
       }
 
+      // Fix (Broken Voice Synthesis): forward the owner_token returned by
+      // the server into saveVoiceProfile so it lands in the stored profile
+      // (see ownerToken field above) instead of being silently dropped.
       const profile = await saveVoiceProfile({
         voice_id: payload.voice_id,
+        owner_token: payload.owner_token,
         name: payload.name || name
       }, audioBlob);
 
